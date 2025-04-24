@@ -74,12 +74,16 @@ struct ContentView: View {
                             ForEach(filteredItems) { item in
                                 VStack(alignment: .leading, spacing: 4) {
                                     if let uiImage = UIImage(contentsOfFile: item.imageName) {
-                                        Image(uiImage: uiImage)
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(height: 150)
-                                            .frame(alignment: Alignment.center)
-                                            .cornerRadius(8)
+                                        ZStack {
+                                            Color(.systemGray6) // 背景顏色與格子背景一致
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .scaledToFit()
+                                                .frame(height: 150)
+                                                .cornerRadius(8)
+                                        }
+                                        .frame(height: 150)
+                                        .cornerRadius(8)
                                     }
                                     
                                     Text("\(item.brand) · \(item.category)")
@@ -193,10 +197,14 @@ struct AddItemView: View {
         NavigationView {
             Form {
                 if let image = selectedImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 200)
+                    HStack {
+                            Spacer()
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 200)
+                            Spacer()
+                        }
                 }
 
                 TextField("Name", text: $name)
