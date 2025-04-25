@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C2D30BC02DBA2A1B003C912B /* DeepLabV3.mlmodel in Sources */ = {isa = PBXBuildFile; fileRef = C2D30BBF2DBA2A1B003C912B /* DeepLabV3.mlmodel */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C2D30B612DB933DA003C912B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		C2D30B502DB933D8003C912B /* mythings.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mythings.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2D30B602DB933DA003C912B /* mythingsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mythingsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2D30B6A2DB933DB003C912B /* mythingsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mythingsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2D30BBF2DBA2A1B003C912B /* DeepLabV3.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = DeepLabV3.mlmodel; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +84,7 @@
 				C2D30B632DB933DA003C912B /* mythingsTests */,
 				C2D30B6D2DB933DB003C912B /* mythingsUITests */,
 				C2D30B512DB933D8003C912B /* Products */,
+				C2D30BBF2DBA2A1B003C912B /* DeepLabV3.mlmodel */,
 			);
 			sourceTree = "<group>";
 		};
@@ -236,6 +242,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C2D30BC02DBA2A1B003C912B /* DeepLabV3.mlmodel in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,6 +406,9 @@
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +438,9 @@
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
