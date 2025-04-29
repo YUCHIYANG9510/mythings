@@ -10,13 +10,34 @@ import PhotosUI
 import UIKit
 import Foundation
 
-struct Item: Identifiable {
-    let id = UUID()
+struct Item: Identifiable, Codable {
+    let id: UUID
     let imageName: String
     let brand: String
     let category: String
     let name: String
     let price: String
+
+    init(id: UUID = UUID(), imageName: String, brand: String, category: String, name: String, price: String) {
+        self.id = id
+        self.imageName = imageName
+        self.brand = brand
+        self.category = category
+        self.name = name
+        self.price = price
+    }
+}
+
+struct Category: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var color: String
+    
+    init(id: UUID = UUID(), name: String, color: String = "blue") {
+        self.id = id
+        self.name = name
+        self.color = color
+    }
 }
 
 extension FileManager {
@@ -25,20 +46,89 @@ extension FileManager {
     }
 }
 
+class CategoryStore: ObservableObject {
+    @Published var categories: [Category] = []
+    
+    private var savePath: URL {
+        FileManager.documentsDirectory.appendingPathComponent("categories.json")
+    }
+    init() {
+            loadCategories()
+            
+            // Add default categories if none exist
+            if categories.isEmpty {
+                categories = [
+                    Category(name: "3C Device", color: "blue"),
+                    Category(name: "Furniture", color: "green"),
+                    Category(name: "Kitchen", color: "orange"),
+                    Category(name: "Clothes", color: "purple"),
+                    Category(name: "Shoes", color: "red"),
+                    Category(name: "Bags", color: "indigo")
+                ]
+                saveCategories()
+            }
+        }
+        
+        func addCategory(name: String, color: String = "blue") {
+            let newCategory = Category(name: name, color: color)
+            categories.append(newCategory)
+            saveCategories()
+        }
+        
+        func deleteCategory(at indexSet: IndexSet) {
+            categories.remove(atOffsets: indexSet)
+            saveCategories()
+        }
+        
+        func updateCategory(category: Category) {
+            if let index = categories.firstIndex(where: { $0.id == category.id }) {
+                categories[index] = category
+                saveCategories()
+            }
+        }
+        
+        private func saveCategories() {
+            do {
+                let data = try JSONEncoder().encode(categories)
+                try data.write(to: savePath)
+            } catch {
+                print("Failed to save categories: \(error)")
+            }
+        }
+        
+        private func loadCategories() {
+            do {
+                let data = try Data(contentsOf: savePath)
+                categories = try JSONDecoder().decode([Category].self, from: data)
+            } catch {
+                print("Failed to load categories or no data yet: \(error)")
+            }
+        }
+    }
+
 struct ContentView: View {
-    let categories = ["All", "Tops", "Pants", "Outer", "Bags", "Shoes", "Other"]
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
     @State private var showCamera = false
     @State private var showActionSheet = false
     @State private var selectedImage: UIImage?
-    @State private var showAddSheet = false
     @State private var items: [Item] = []
-    @State private var selectedItem: Item? // 被點擊的 item（用於放大預覽）
-    @State private var showDetailView = false
-    @State private var editingItem: Item? // 用來編輯 item
+    @State private var selectedItem: Item?
+    @State private var editingItem: Item?
+    @State private var showManageCategories = false
+    @State private var isAddingNewItem = false
     
+    @StateObject private var categoryStore = CategoryStore()
     
+    private var savePath: URL {
+        FileManager.documentsDirectory.appendingPathComponent("items.json")
+    }
+    
+    var categoryNames: [String] {
+        var names = ["All"]
+        names.append(contentsOf: categoryStore.categories.map { $0.name })
+        return names
+    }
     
     var filteredItems: [Item] {
         selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
@@ -54,7 +144,7 @@ struct ContentView: View {
                 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(categories, id: \.self) { category in
+                        ForEach(categoryNames, id: \.self) { category in
                             Button(action: {
                                 selectedCategory = category
                             }) {
@@ -83,8 +173,7 @@ struct ContentView: View {
                                 .font(.subheadline)
                         }
                         .padding(.top, 250)
-                    }
-                    else {
+                    } else {
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                             ForEach(filteredItems) { item in
                                 VStack(alignment: .leading, spacing: 4) {
@@ -97,6 +186,7 @@ struct ContentView: View {
                                                 .scaledToFit()
                                                 .frame(height: 120)
                                                 .cornerRadius(8)
+                                                
                                         }
                                         .frame(height: 150)
                                         .cornerRadius(8)
@@ -120,15 +210,14 @@ struct ContentView: View {
                                 .cornerRadius(12)
                                 .onTapGesture {
                                     selectedItem = item
-                                    showDetailView = true
                                 }
                                 .contextMenu {
                                     Button("編輯") {
                                         editingItem = item
-                                        showAddSheet = true
                                     }
                                     Button("刪除", role: .destructive) {
                                         items.removeAll { $0.id == item.id }
+                                        saveItems()
                                     }
                                 }
                             }
@@ -138,7 +227,6 @@ struct ContentView: View {
                 }
             }
             
-            // 固定在底部中央的 "+" 按鈕
             Button(action: {
                 showActionSheet = true
             }) {
@@ -161,54 +249,88 @@ struct ContentView: View {
                 Button("取消", role: .cancel) {}
             }
         }
+        .sheet(isPresented: $showManageCategories) {
+            ManageCategoriesView(categoryStore: categoryStore)
+        }
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
                     if selectedImage != nil {
-                        showAddSheet = true
-                    }
+                        isAddingNewItem = true                    }
                 }
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker(selectedImage: $selectedImage)
                 .onDisappear {
                     if selectedImage != nil {
-                        showAddSheet = true
-                    }
+                        isAddingNewItem = true                    }
                 }
         }
-        .sheet(isPresented: $showDetailView) {
-            if let selectedItem = selectedItem {
-                ItemDetailView(item: selectedItem)
+        .sheet(item: $selectedItem) { item in
+            ItemDetailView(item: item)
+        }
+        .sheet(item: $editingItem) { editing in
+            AddItemView(
+                selectedImage: $selectedImage,
+                existingItem: editing,
+                categoryStore: categoryStore,
+                showManageCategories: $showManageCategories
+            ) { newItem in
+                if let index = items.firstIndex(where: { $0.id == editing.id }) {
+                    items[index] = newItem
+                }
+                self.editingItem = nil
+                selectedImage = nil
+                saveItems()
             }
         }
-        .sheet(isPresented: $showAddSheet) {
-            AddItemView(selectedImage: $selectedImage, existingItem: editingItem) { newItem in
-                if let editing = editingItem {
-                    // 編輯模式：更新現有項目
-                    if let index = items.firstIndex(where: { $0.id == editing.id }) {
-                        items[index] = newItem
-                    }
-                    editingItem = nil
-                } else {
-                    // 新增模式：加入新項目
-                    items.append(newItem)
-                }
-                selectedImage = nil  // Reset selected image
-                showAddSheet = false // Dismiss the sheet
+        .sheet(isPresented: $isAddingNewItem) {
+            AddItemView(
+                selectedImage: $selectedImage,
+                existingItem: nil,
+                categoryStore: categoryStore,
+                showManageCategories: $showManageCategories
+            ) { newItem in
+                items.append(newItem)
+                selectedImage = nil
+                isAddingNewItem = false
+                saveItems()
             }
+        }
+        .onAppear {
+            loadItems()
         }
     }
+    
+    private func saveItems() {
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: savePath)
+        } catch {
+            print("儲存失敗：\(error)")
+        }
+    }
+    
+    private func loadItems() {
+        do {
+            let data = try Data(contentsOf: savePath)
+            items = try JSONDecoder().decode([Item].self, from: data)
+        } catch {
+            print("讀取失敗或尚無資料：\(error)")
+        }
+    }
+    
+    
     
     struct ItemDetailView: View {
         let item: Item
         @Environment(\.dismiss) var dismiss
+        @State private var image: UIImage?
         
         var body: some View {
             VStack {
-                let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
-                if let uiImage = UIImage(contentsOfFile: imagePath) {
-                    Image(uiImage: uiImage)
+                if let image = image {
+                    Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
                         .frame(height: 300)
@@ -226,6 +348,12 @@ struct ContentView: View {
             .padding()
             .onTapGesture {
                 dismiss()
+            }
+            .onAppear {
+                let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
+                if let uiImage = UIImage(contentsOfFile: imagePath) {
+                    self.image = uiImage
+                }
             }
         }
     }
@@ -311,17 +439,174 @@ struct ContentView: View {
         }
     }
     
+    struct ManageCategoriesView: View {
+        @ObservedObject var categoryStore: CategoryStore
+        @Environment(\.dismiss) var dismiss
+        @State private var newCategoryName = ""
+        @State private var selectedColor = "blue"
+        @State private var showAddCategoryView = false
+        
+        let colorOptions = [
+            "blue", "green", "red", "purple", "indigo", "orange", "pink", "yellow", "teal"
+        ]
+        
+        var body: some View {
+            NavigationView {
+                VStack(spacing: 20) {
+                    List {
+                        ForEach(categoryStore.categories) { category in
+                            HStack {
+                                Text(category.name)
+                                    .font(.body)
+                                Spacer()
+                                Circle()
+                                    .fill(colorForName(category.color))
+                                    .frame(width: 24, height: 24)
+                            }
+                        }
+                        .onDelete(perform: categoryStore.deleteCategory)
+                        
+                        Button(action: {
+                            showAddCategoryView = true
+                        }) {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.blue)
+                                Text("Add Category")
+                            }
+                        }
+                    }
+                    .listStyle(InsetGroupedListStyle())
+                }
+                .navigationTitle("Manage Categories")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Edit") {
+                            // Future enhancement: Implement edit mode
+                        }
+                    }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
+                .sheet(isPresented: $showAddCategoryView) {
+                    AddCategoryView(categoryStore: categoryStore)
+                }
+            }
+        }
+        
+        func colorForName(_ name: String) -> Color {
+            switch name {
+            case "blue": return .blue
+            case "green": return .green
+            case "red": return .red
+            case "purple": return .purple
+            case "indigo": return .indigo
+            case "orange": return .orange
+            case "pink": return .pink
+            case "yellow": return .yellow
+            case "teal": return .teal
+            default: return .blue
+            }
+        }
+    }
+
+    struct AddCategoryView: View {
+        @ObservedObject var categoryStore: CategoryStore
+        @Environment(\.dismiss) var dismiss
+        @State private var categoryName = ""
+        @State private var selectedColor = "blue"
+        @State private var showAlert = false
+        
+        let colorOptions = [
+            "blue", "green", "red", "purple", "indigo", "orange", "pink", "yellow", "teal"
+        ]
+        
+        var body: some View {
+            NavigationView {
+                Form {
+                    Section(header: Text("Category Name")) {
+                        TextField("Name", text: $categoryName)
+                    }
+                    
+                    Section(header: Text("Color")) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 10) {
+                            ForEach(colorOptions, id: \.self) { color in
+                                Circle()
+                                    .fill(colorForName(color))
+                                    .frame(width: 30, height: 30)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.white, lineWidth: 2)
+                                            .padding(-4)
+                                            .opacity(selectedColor == color ? 1 : 0)
+                                    )
+                                    .onTapGesture {
+                                        selectedColor = color
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                .navigationTitle("Add Category")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                    }
+                    
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Save") {
+                            if categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                showAlert = true
+                            } else {
+                                categoryStore.addCategory(name: categoryName, color: selectedColor)
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                .alert("Please enter a category name", isPresented: $showAlert) {
+                    Button("OK", role: .cancel) {}
+                }
+            }
+        }
+        
+        func colorForName(_ name: String) -> Color {
+            switch name {
+            case "blue": return .blue
+            case "green": return .green
+            case "red": return .red
+            case "purple": return .purple
+            case "indigo": return .indigo
+            case "orange": return .orange
+            case "pink": return .pink
+            case "yellow": return .yellow
+            case "teal": return .teal
+            default: return .blue
+            }
+        }
+    }
+
     struct AddItemView: View {
         @Binding var selectedImage: UIImage?
         var existingItem: Item? = nil
+        @ObservedObject var categoryStore: CategoryStore
+        @Binding var showManageCategories: Bool
+        
         @Environment(\.dismiss) var dismiss
         var onComplete: (Item) -> Void
         @State private var name: String = ""
         @State private var brand: String = ""
         @State private var category: String = ""
         @State private var price: String = ""
-        
-        let categories = ["Tops", "Pants", "Outer", "Shoes", "Bags", "Other"]
+        @State private var showValidationAlert = false
+        @State private var showCategoryManagement = false
         
         var body: some View {
             NavigationView {
@@ -342,68 +627,98 @@ struct ContentView: View {
                     TextField("Price", text: $price)
                         .keyboardType(.decimalPad)
                         .onChange(of: price) { _, newValue in
-                            // Remove any existing "$" before adding a new one
                             price = newValue.replacingOccurrences(of: "$", with: "")
                         }
                     
-                    Picker("Category", selection: $category) {
-                        ForEach(categories, id: \.self) {
-                            Text($0)
+                    Section(header: Text("Category")) {
+                        Picker("Category", selection: $category) {
+                            ForEach(categoryStore.categories) { category in
+                                Text(category.name).tag(category.name)
+                            }
+                        }
+                        
+                        Button(action: {
+                            showCategoryManagement = true
+                        }) {
+                            HStack {
+                                Text("Manage Categories")
+                                    .foregroundColor(.black)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.gray)
+                            }
                         }
                     }
                 }
-                .navigationTitle("Add item")
+                .navigationTitle(existingItem == nil ? "Add item" : "Edit item")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button(action: {
+                        Button("Cancel") {
                             dismiss()
-                        }) {
-                            Text("Cancel")
                         }
                     }
                     
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: {
-                            if let selectedImage = selectedImage {
-                                let fileName = existingItem?.imageName ?? UUID().uuidString + ".png"
-                                let fileURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
-                                
-                                if let data = selectedImage.pngData() {
-                                    try? data.write(to: fileURL)
+                        Button("Save") {
+                            if isFormValid() {
+                                if let selectedImage = selectedImage {
+                                    let fileName = existingItem?.imageName ?? UUID().uuidString + ".png"
+                                    let fileURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
+                                    
+                                    if let data = selectedImage.pngData() {
+                                        try? data.write(to: fileURL)
+                                    }
+                                    
+                                    let item = Item(
+                                        id: existingItem?.id ?? UUID(),
+                                        imageName: fileName,
+                                        brand: brand,
+                                        category: category,
+                                        name: name,
+                                        price: price
+                                    )
+                                    
+                                    onComplete(item)
                                 }
-                                
-                                let item = Item(
-                                    imageName: fileName,
-                                    brand: brand,
-                                    category: category,
-                                    name: name,
-                                    price: price
-                                )
-                                
-                                onComplete(item)
-                                dismiss()
+                            } else {
+                                showValidationAlert = true
                             }
-                        }) {
-                            Text("新增")
-                        }
-                    }
-                }
-                .onAppear {
-                    if let item = existingItem {
-                        name = item.name
-                        brand = item.brand
-                        category = item.category
-                        // Remove "$" when editing
-                        price = item.price.replacingOccurrences(of: "$", with: "")
-                        
-                        if let image = UIImage(contentsOfFile: FileManager.documentsDirectory.appendingPathComponent(item.imageName).path) {
-                            selectedImage = image
                         }
                     }
                 }
             }
+            .sheet(isPresented: $showCategoryManagement) {
+                ManageCategoriesView(categoryStore: categoryStore)
+            }
+            .onAppear {
+                if let item = existingItem {
+                    name = item.name
+                    brand = item.brand
+                    category = item.category
+                    price = item.price.replacingOccurrences(of: "$", with: "")
+                    if let image = UIImage(contentsOfFile: FileManager.documentsDirectory.appendingPathComponent(item.imageName).path) {
+                        selectedImage = image
+                    }
+                } else if !categoryStore.categories.isEmpty {
+                    category = categoryStore.categories[0].name
+                }
+            }
+            .alert("請填寫所有欄位", isPresented: $showValidationAlert) {
+                Button("OK", role: .cancel) {}
+            }
+        }
+        
+        private func isFormValid() -> Bool {
+            !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+            !brand.trimmingCharacters(in: .whitespaces).isEmpty &&
+            !category.isEmpty &&
+            !price.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
+    
+    
+    
 }
 
 #Preview {
