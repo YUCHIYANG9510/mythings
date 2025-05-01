@@ -10,14 +10,14 @@ import SwiftUI
 
 class CategoryStore: ObservableObject {
     @Published var categories: [Category] = []
-    
+
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("categories.json")
     }
-    
+
     init() {
         loadCategories()
-        
+
         // Add default categories if none exist
         if categories.isEmpty {
             categories = [
@@ -31,25 +31,25 @@ class CategoryStore: ObservableObject {
             saveCategories()
         }
     }
-    
+
     func addCategory(name: String, color: String = "blue") {
         let newCategory = Category(name: name, color: color)
         categories.append(newCategory)
         saveCategories()
     }
-    
+
     func deleteCategory(at indexSet: IndexSet) {
         categories.remove(atOffsets: indexSet)
         saveCategories()
     }
-    
+
     func updateCategory(category: Category) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
             categories[index] = category
             saveCategories()
         }
     }
-    
+
     private func saveCategories() {
         do {
             let data = try JSONEncoder().encode(categories)
@@ -58,7 +58,7 @@ class CategoryStore: ObservableObject {
             print("Failed to save categories: \(error)")
         }
     }
-    
+
     private func loadCategories() {
         do {
             let data = try Data(contentsOf: savePath)
@@ -67,19 +67,22 @@ class CategoryStore: ObservableObject {
             print("Failed to load categories or no data yet: \(error)")
         }
     }
-    
+
+    /// 根據儲存的顏色名稱回傳對應的 SwiftUI `Color` 物件
     func colorForName(_ name: String) -> Color {
-        switch name {
-        case "blue": return .blue
-        case "green": return .green
-        case "red": return .red
-        case "purple": return .purple
-        case "indigo": return .indigo
-        case "orange": return .orange
-        case "pink": return .pink
-        case "yellow": return .yellow
-        case "teal": return .teal
-        default: return .blue
-        }
+        let colorMap: [String: Color] = [
+            "blue": .blue,
+            "green": .green,
+            "red": .red,
+            "purple": .purple,
+            "indigo": .indigo,
+            "orange": .orange,
+            "pink": .pink,
+            "yellow": .yellow,
+            "teal": .teal,
+            "gray": .gray
+        ]
+
+        return colorMap[name, default: .blue]
     }
 }

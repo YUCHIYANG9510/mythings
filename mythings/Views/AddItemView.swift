@@ -21,7 +21,8 @@ struct AddItemView: View {
     @State private var price: String = ""
     @State private var showValidationAlert = false
     @State private var showCategoryManagement = false
-    
+    @State private var showImagePicker = false
+   
     var body: some View {
         NavigationView {
             Form {
@@ -32,8 +33,12 @@ struct AddItemView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: 200)
+                            .onTapGesture {
+                                            showImagePicker = true
+                                        }
                         Spacer()
                     }
+                    .padding(.vertical)
                 }
                 
                 TextField("Name", text: $name)
@@ -104,6 +109,9 @@ struct AddItemView: View {
         }
         .sheet(isPresented: $showCategoryManagement) {
             ManageCategoriesView(categoryStore: categoryStore)
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker(image: $selectedImage)
         }
         .onAppear {
             if let item = existingItem {

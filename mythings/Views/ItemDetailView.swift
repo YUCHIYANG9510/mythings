@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ItemDetailView: View {
     let item: Item
@@ -24,11 +25,29 @@ struct ItemDetailView: View {
             Text(item.name)
                 .font(.title2)
                 .padding(.vertical)
-            Text("\(item.brand) · \(item.category)")
+           /* Text("\(item.brand) · \(item.category)")
                 .foregroundColor(.gray)
-                .padding(.bottom, 4)
-            Text("$\(item.price)")
-                .font(.headline)
+                .padding(.bottom, 4) */
+            HStack{
+                Text("\(item.brand) ·")
+                Text("\(item.category)")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .font(.caption)
+                    .background(Color(UIColor.systemGray5))
+                    .foregroundColor(Color.black)
+                    .clipShape(Capsule())
+            }
+            .padding(.bottom, 4)
+            if let price = Double(item.price) {
+                Text("$\(formattedPrice(price))")
+                    .font(.callout)
+                    .foregroundColor(.black)
+            } else {
+                Text("$\(item.price)")
+                    .font(.callout)
+                    .foregroundColor(.black)
+            }
         }
         .padding()
         .onTapGesture {
@@ -40,5 +59,12 @@ struct ItemDetailView: View {
                 self.image = uiImage
             }
         }
+    }
+    
+    private func formattedPrice(_ price: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
     }
 }

@@ -20,9 +20,7 @@ struct ManageCategoriesView: View {
                             Text(category.name)
                                 .font(.body)
                             Spacer()
-                            Circle()
-                                .fill(categoryStore.colorForName(category.color))
-                                .frame(width: 24, height: 24)
+                            
                         }
                     }
                     .onDelete(perform: categoryStore.deleteCategory)
@@ -43,11 +41,6 @@ struct ManageCategoriesView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Edit") {
-                        // Future enhancement: Implement edit mode
-                    }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
                         dismiss()
                     }
