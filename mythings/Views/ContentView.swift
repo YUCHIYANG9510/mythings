@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var editingItem: Item?
     @State private var showManageCategories = false
     @State private var isAddingNewItem = false
+    @State private var dragOffset = CGSize.zero
     
     @StateObject private var categoryStore = CategoryStore()
     
@@ -54,6 +55,22 @@ struct ContentView: View {
                     editingItem: $editingItem,
                     items: $items,
                     saveItems: saveItems
+                )
+                .gesture(
+                    DragGesture()
+                        .onChanged { gesture in
+                            self.dragOffset = gesture.translation
+                        }
+                        .onEnded { gesture in
+                            // 水平滑動判斷（忽略較小的垂直滑動）
+                            if abs(gesture.translation.width) > abs(gesture.translation.height) {
+                                // 滑動超過螢幕寬度的 20% 才觸發切換
+                                if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
+                                    changeCategoryOnSwipe(gesture.translation.width)
+                                }
+                            }
+                            self.dragOffset = .zero
+                        }
                 )
             }
             
@@ -117,6 +134,38 @@ struct ContentView: View {
             loadItems()
         }
     }
+    
+    private func changeCategoryOnSwipe(_ translationWidth: CGFloat) {
+        guard !categoryNames.isEmpty else { return }
+        
+        if let currentIndex = categoryNames.firstIndex(of: selectedCategory) {
+            var newIndex: Int
+            
+            // 向左滑動 -> 下一個類別
+            if translationWidth < 0 {
+                newIndex = (currentIndex + 1) % categoryNames.count
+            }
+            // 向右滑動 -> 上一個類別
+            else {
+                newIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
+            }
+            
+            // 如果類別確實有變化，則觸發反饋
+            if categoryNames[newIndex] != selectedCategory {
+                selectedCategory = categoryNames[newIndex]
+                triggerHapticFeedback()
+            }
+        }
+    }
+    
+    // 觸發觸覺反饋
+    private func triggerHapticFeedback() {
+        // 使用簡單的觸覺反饋 (適用於所有裝置)
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+    
+
     
     private func saveItems() {
         do {
