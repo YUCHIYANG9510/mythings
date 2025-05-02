@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var dragOffset = CGSize.zero
     
     @StateObject private var categoryStore = CategoryStore()
+    @StateObject private var brandStore = BrandStore()
     
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
@@ -107,6 +108,7 @@ struct ContentView: View {
                 selectedImage: $selectedImage,
                 existingItem: editing,
                 categoryStore: categoryStore,
+                brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
                 if let index = items.firstIndex(where: { $0.id == editing.id }) {
@@ -122,6 +124,7 @@ struct ContentView: View {
                 selectedImage: $selectedImage,
                 existingItem: nil,
                 categoryStore: categoryStore,
+                brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
                 items.append(newItem)
@@ -284,6 +287,7 @@ struct ItemCell: View {
             HStack {
                 Text(item.name)
                     .font(.subheadline)
+                    .lineLimit(1)
                 Spacer()
                 if let price = Double(item.price) {
                     Text("$\(formattedPrice(price))")

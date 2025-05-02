@@ -11,6 +11,7 @@ struct AddItemView: View {
     @Binding var selectedImage: UIImage?
     var existingItem: Item? = nil
     @ObservedObject var categoryStore: CategoryStore
+    @ObservedObject var brandStore: BrandStore
     @Binding var showManageCategories: Bool
     
     @Environment(\.dismiss) var dismiss
@@ -42,7 +43,65 @@ struct AddItemView: View {
                 }
                 
                 TextField("Name", text: $name)
-                TextField("Brand", text: $brand)
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        TextField("Brand", text: $brand)
+                            .autocapitalization(.words)
+
+                        Button(action: {
+                            let trimmed = brand.trimmingCharacters(in: .whitespaces)
+                            if !trimmed.isEmpty && !brandStore.brands.contains(trimmed) {
+                                brandStore.brands.append(trimmed)
+                            }
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                Text("Add Brand")
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.1))
+                            .foregroundColor(.blue)
+                            .cornerRadius(20)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    if !brandStore.brands.isEmpty {
+
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(brandStore.brands, id: \.self) { brandName in
+                                    HStack(spacing: 6) {
+                                        Button(action: {
+                                            brand = brandName
+                                        }) {
+                                            Text(brandName)
+                                                .foregroundColor(.black)
+                                        }
+
+                                        Button(action: {
+                                            if let index = brandStore.brands.firstIndex(of: brandName) {
+                                                brandStore.brands.remove(at: index)
+                                            }
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.gray)
+                                        }
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.gray.opacity(0.2))
+                                    .foregroundColor(Color.black)
+                                    .cornerRadius(16)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical)
+
                 HStack {
                     Text("$")
                         .foregroundColor(.gray)
