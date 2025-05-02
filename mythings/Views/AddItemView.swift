@@ -43,11 +43,15 @@ struct AddItemView: View {
                 
                 TextField("Name", text: $name)
                 TextField("Brand", text: $brand)
-                TextField("Price", text: $price)
-                    .keyboardType(.decimalPad)
-                    .onChange(of: price) { _, newValue in
-                        price = newValue.replacingOccurrences(of: "$", with: "")
-                    }
+                HStack {
+                    Text("$")
+                        .foregroundColor(.gray)
+                    TextField("Price", text: $price)
+                        .keyboardType(.decimalPad)
+                        .onChange(of: price) { _, newValue in
+                            price = newValue.replacingOccurrences(of: "$", with: "")
+                        }
+                }
                 
                 Section(header: Text("Category")) {
                     Picker("Category", selection: $category) {
