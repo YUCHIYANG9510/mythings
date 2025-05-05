@@ -12,6 +12,7 @@ struct ItemDetailView: View {
     let item: Item
     @Environment(\.dismiss) var dismiss
     @State private var image: UIImage?
+    @StateObject private var cacheManager = ImageCacheManager.shared
     
     var body: some View {
         VStack {
@@ -53,12 +54,10 @@ struct ItemDetailView: View {
         .onTapGesture {
             dismiss()
         }
-        .onAppear {
-            let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
-            if let uiImage = UIImage(contentsOfFile: imagePath) {
-                self.image = uiImage
-            }
-        }
+        .onAppear(perform: loadImage)
+        .onChange(of: cacheManager.cacheInvalidationTrigger) {
+                    loadImage()
+                }
     }
     
     private func formattedPrice(_ price: Double) -> String {
@@ -67,4 +66,10 @@ struct ItemDetailView: View {
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
     }
-}
+    
+    private func loadImage() {
+            let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
+            image = UIImage(contentsOfFile: imagePath)
+        }
+    }
+

@@ -13,7 +13,16 @@ import Foundation
 enum NavigationTarget: Hashable {
     case settings
 }
-
+// First, let's create a simple image cache manager
+class ImageCacheManager: ObservableObject {
+    static let shared = ImageCacheManager()
+    @Published var cacheInvalidationTrigger = UUID()
+    
+    func invalidateCache() {
+        // This will trigger any views observing this object to refresh
+        cacheInvalidationTrigger = UUID()
+    }
+}
 struct ContentView: View {
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
@@ -352,32 +361,47 @@ struct ItemCell: View {
 
 struct ItemImageView: View {
     let imageName: String
+    @StateObject private var cacheManager = ImageCacheManager.shared
+    @State private var image: UIImage?
     
     var body: some View {
-        let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
-        if let uiImage = UIImage(contentsOfFile: imagePath) {
-            ZStack {
-                Color(.systemGray6)
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 120)
-                    .cornerRadius(8)
+        Group {
+            if let image = image {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 120)
+                        .cornerRadius(8)
+                }
+                .frame(height: 150)
+                .cornerRadius(8)
+            } else {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(systemName: "photo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 60)
+                        .foregroundColor(.gray)
+                }
+                .frame(height: 150)
+                .cornerRadius(8)
             }
-            .frame(height: 150)
-            .cornerRadius(8)
-        } else {
-            ZStack {
-                Color(.systemGray6)
-                Image(systemName: "photo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(height: 60)
-                    .foregroundColor(.gray)
-            }
-            .frame(height: 150)
-            .cornerRadius(8)
         }
+        .onAppear(perform: loadImage)
+        .onChange(of: cacheManager.cacheInvalidationTrigger) {
+                    loadImage()
+                }
+                .onChange(of: imageName) {
+                    loadImage()
+                }
+    }
+    
+    private func loadImage() {
+        let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
+        image = UIImage(contentsOfFile: imagePath)
     }
 }
 
@@ -411,21 +435,6 @@ struct AddButton: View {
     }
 }
 
-// MARK: - Helper Functions
-func colorForName(_ name: String) -> Color {
-    switch name {
-    case "blue": return .blue
-    case "green": return .green
-    case "red": return .red
-    case "purple": return .purple
-    case "indigo": return .indigo
-    case "orange": return .orange
-    case "pink": return .pink
-    case "yellow": return .yellow
-    case "teal": return .teal
-    default: return .blue
-    }
-}
 
 #Preview {
     ContentView()

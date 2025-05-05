@@ -161,6 +161,8 @@ struct AddItemView: View {
                                     price: price
                                 )
                                 
+                                ImageCacheManager.shared.invalidateCache()
+                                
                                 onComplete(item)
                             }
                         } else {
