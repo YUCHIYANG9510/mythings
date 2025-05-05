@@ -10,6 +10,10 @@ import PhotosUI
 import UIKit
 import Foundation
 
+enum NavigationTarget: Hashable {
+    case settings
+}
+
 struct ContentView: View {
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
@@ -22,64 +26,73 @@ struct ContentView: View {
     @State private var showManageCategories = false
     @State private var isAddingNewItem = false
     @State private var dragOffset = CGSize.zero
-    
+    @State private var path: [NavigationTarget] = []
+
     @StateObject private var categoryStore = CategoryStore()
     @StateObject private var brandStore = BrandStore()
-    
+
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
-    
+
     var categoryNames: [String] {
         var names = ["All"]
         names.append(contentsOf: categoryStore.categories.map { $0.name })
         return names
     }
-    
+
     var filteredItems: [Item] {
         selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
     }
-    
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack {
-                HeaderView()
-                
-                CategoryScrollView(
-                    categoryNames: categoryNames,
-                    selectedCategory: $selectedCategory
-                )
-                
-                ItemsGridView(
-                    filteredItems: filteredItems,
-                    selectedItem: $selectedItem,
-                    editingItem: $editingItem,
-                    items: $items,
-                    saveItems: saveItems
-                )
-                .gesture(
-                    DragGesture()
-                        .onChanged { gesture in
-                            self.dragOffset = gesture.translation
-                        }
-                        .onEnded { gesture in
-                            // 水平滑動判斷（忽略較小的垂直滑動）
-                            if abs(gesture.translation.width) > abs(gesture.translation.height) {
-                                // 滑動超過螢幕寬度的 20% 才觸發切換
-                                if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
-                                    changeCategoryOnSwipe(gesture.translation.width)
-                                }
+        NavigationStack(path: $path) {
+            ZStack(alignment: .bottom) {
+                VStack {
+                    HeaderView {
+                        path.append(.settings)
+                    }
+
+                    CategoryScrollView(
+                        categoryNames: categoryNames,
+                        selectedCategory: $selectedCategory
+                    )
+
+                    ItemsGridView(
+                        filteredItems: filteredItems,
+                        selectedItem: $selectedItem,
+                        editingItem: $editingItem,
+                        items: $items,
+                        saveItems: saveItems
+                    )
+                    .gesture(
+                        DragGesture()
+                            .onChanged { gesture in
+                                self.dragOffset = gesture.translation
                             }
-                            self.dragOffset = .zero
-                        }
+                            .onEnded { gesture in
+                                if abs(gesture.translation.width) > abs(gesture.translation.height) {
+                                    if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
+                                        changeCategoryOnSwipe(gesture.translation.width)
+                                    }
+                                }
+                                self.dragOffset = .zero
+                            }
+                    )
+                }
+
+                AddButton(
+                    showActionSheet: $showActionSheet,
+                    showCamera: $showCamera,
+                    showImagePicker: $showImagePicker
                 )
             }
-            
-            AddButton(
-                showActionSheet: $showActionSheet,
-                showCamera: $showCamera,
-                showImagePicker: $showImagePicker
-            )
+            .navigationDestination(for: NavigationTarget.self) { target in
+                switch target {
+                case .settings:
+                    SettingsView()
+                }
+            }
         }
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
@@ -137,39 +150,30 @@ struct ContentView: View {
             loadItems()
         }
     }
-    
+
     private func changeCategoryOnSwipe(_ translationWidth: CGFloat) {
         guard !categoryNames.isEmpty else { return }
-        
+
         if let currentIndex = categoryNames.firstIndex(of: selectedCategory) {
             var newIndex: Int
-            
-            // 向左滑動 -> 下一個類別
             if translationWidth < 0 {
                 newIndex = (currentIndex + 1) % categoryNames.count
-            }
-            // 向右滑動 -> 上一個類別
-            else {
+            } else {
                 newIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
             }
-            
-            // 如果類別確實有變化，則觸發反饋
+
             if categoryNames[newIndex] != selectedCategory {
                 selectedCategory = categoryNames[newIndex]
                 triggerHapticFeedback()
             }
         }
     }
-    
-    // 觸發觸覺反饋
+
     private func triggerHapticFeedback() {
-        // 使用簡單的觸覺反饋 (適用於所有裝置)
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
     }
-    
 
-    
     private func saveItems() {
         do {
             let data = try JSONEncoder().encode(items)
@@ -178,7 +182,7 @@ struct ContentView: View {
             print("儲存失敗：\(error)")
         }
     }
-    
+
     private func loadItems() {
         do {
             let data = try Data(contentsOf: savePath)
@@ -189,15 +193,36 @@ struct ContentView: View {
     }
 }
 
+
 // MARK: - Subviews
 struct HeaderView: View {
+    var navigateToSettings: () -> Void
+
     var body: some View {
-        Text("My Things")
-            .font(.title3)
-            .bold()
-            .padding(.vertical)
+        HStack {
+            Button(action: {
+                navigateToSettings()
+            }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title2)
+                    .padding(.leading)
+                    .foregroundStyle(.black)
+            }
+
+            Spacer()
+
+            Text("My Things")
+                .font(.title3)
+                .bold()
+
+            Spacer()
+
+            Spacer().frame(width: 40)
+        }
+        .padding(.vertical)
     }
 }
+
 
 struct CategoryScrollView: View {
     let categoryNames: [String]
