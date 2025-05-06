@@ -20,11 +20,6 @@ struct SettingsView: View {
         Form {
             // MARK: - CATEGORIES
             Section(header: Text("CATEGORIES")) {
-                Picker("Default Category", selection: $defaultCategory) {
-                    ForEach(availableCategories, id: \.self) { category in
-                        Text(category)
-                    }
-                }
 
                 NavigationLink("Manage Categories") {
                     ManageCategoriesView(categoryStore: CategoryStore())
