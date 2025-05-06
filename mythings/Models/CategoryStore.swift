@@ -9,7 +9,11 @@ import Foundation
 import SwiftUI
 
 class CategoryStore: ObservableObject {
-    @Published var categories: [Category] = []
+    @Published var categories: [Category] = [] {
+        didSet {
+            saveCategories()
+        }
+    }
 
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("categories.json")
@@ -35,18 +39,15 @@ class CategoryStore: ObservableObject {
     func addCategory(name: String, color: String = "blue") {
         let newCategory = Category(name: name, color: color)
         categories.append(newCategory)
-        saveCategories()
     }
 
     func deleteCategory(at indexSet: IndexSet) {
         categories.remove(atOffsets: indexSet)
-        saveCategories()
     }
 
     func updateCategory(category: Category) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
             categories[index] = category
-            saveCategories()
         }
     }
 

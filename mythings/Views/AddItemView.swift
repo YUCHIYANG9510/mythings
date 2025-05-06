@@ -43,6 +43,18 @@ struct AddItemView: View {
                 }
                 
                 TextField("Name", text: $name)
+                
+
+                HStack {
+                    Text("$")
+                        .foregroundColor(.gray)
+                    TextField("Price", text: $price)
+                        .keyboardType(.decimalPad)
+                        .onChange(of: price) { _, newValue in
+                            price = newValue.replacingOccurrences(of: "$", with: "")
+                        }
+                }
+                
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         TextField("Brand", text: $brand)
@@ -73,12 +85,13 @@ struct AddItemView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(brandStore.brands, id: \.self) { brandName in
-                                    HStack(spacing: 6) {
+                                    HStack(spacing: 10) {
                                         Button(action: {
                                             brand = brandName
                                         }) {
                                             Text(brandName)
                                                 .foregroundColor(.black)
+                                                .font(.caption)
                                         }
 
                                         Button(action: {
@@ -88,6 +101,7 @@ struct AddItemView: View {
                                         }) {
                                             Image(systemName: "xmark.circle.fill")
                                                 .foregroundColor(.gray)
+                                                .frame(width: 10, height: 10)
                                         }
                                     }
                                     .padding(.horizontal, 12)
@@ -101,16 +115,6 @@ struct AddItemView: View {
                     }
                 }
                 .padding(.vertical)
-
-                HStack {
-                    Text("$")
-                        .foregroundColor(.gray)
-                    TextField("Price", text: $price)
-                        .keyboardType(.decimalPad)
-                        .onChange(of: price) { _, newValue in
-                            price = newValue.replacingOccurrences(of: "$", with: "")
-                        }
-                }
                 
                 Section(header: Text("Category")) {
                     Picker("Category", selection: $category) {

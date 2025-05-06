@@ -99,7 +99,7 @@ struct ContentView: View {
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
                 case .settings:
-                    SettingsView()
+                    SettingsView(categoryStore: categoryStore)
                 }
             }
         }

@@ -12,7 +12,7 @@ struct SettingsView: View {
     @State private var defaultCategory = "All"
     @State private var isDarkMode = false
     @State private var selectedAppIcon = "Default"
-
+    @ObservedObject var categoryStore: CategoryStore
     let availableCategories = ["All", "Top", "Bottom", "Shoes", "Accessory", "Other"]
     let appIcons = ["Default", "Minimal", "Colorful"]
 
@@ -22,7 +22,7 @@ struct SettingsView: View {
             Section(header: Text("CATEGORIES")) {
 
                 NavigationLink("Manage Categories") {
-                    ManageCategoriesView(categoryStore: CategoryStore())
+                    ManageCategoriesView(categoryStore: categoryStore)
                 }
             }
 
