@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+
+
 struct AddItemView: View {
     @Binding var selectedImage: UIImage?
     var existingItem: Item? = nil
@@ -35,8 +37,8 @@ struct AddItemView: View {
                             .scaledToFit()
                             .frame(height: 200)
                             .onTapGesture {
-                                            showImagePicker = true
-                                        }
+                                showImagePicker = true
+                            }
                         Spacer()
                     }
                     .padding(.vertical)
@@ -44,7 +46,6 @@ struct AddItemView: View {
                 
                 TextField("Name", text: $name)
                 
-
                 HStack {
                     Text("$")
                         .foregroundColor(.gray)
@@ -80,8 +81,6 @@ struct AddItemView: View {
                     }
                     
                     if !brandStore.brands.isEmpty {
-
-
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(brandStore.brands, id: \.self) { brandName in
@@ -143,6 +142,7 @@ struct AddItemView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(.blue) // 設定為藍色
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -173,8 +173,14 @@ struct AddItemView: View {
                             showValidationAlert = true
                         }
                     }
+                    .foregroundColor(.blue) // 設定為藍色
                 }
             }
+            .background(
+                NavigationConfigurator { navController in
+                    navController.navigationBar.tintColor = .systemBlue // 設定導航欄按鈕顏色
+                }
+            )
         }
         .sheet(isPresented: $showCategoryManagement) {
             ManageCategoriesView(categoryStore: categoryStore)

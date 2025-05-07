@@ -36,9 +36,9 @@ struct ContentView: View {
     @State private var isAddingNewItem = false
     @State private var dragOffset = CGSize.zero
     @State private var path: [NavigationTarget] = []
-
-    @StateObject private var categoryStore = CategoryStore()
+    @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
+
 
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
@@ -215,7 +215,7 @@ struct HeaderView: View {
                 Image(systemName: "gearshape.fill")
                     .font(.title2)
                     .padding(.leading)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.primary)
             }
 
             Spacer()
@@ -248,8 +248,12 @@ struct CategoryScrollView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .font(.caption)
-                            .background(selectedCategory == category ? Color.black : Color(.systemGray5))
-                            .foregroundColor(selectedCategory == category ? .white : .black)
+                            .background(
+                                selectedCategory == category ? Color.primary : Color.gray.opacity(0.2)
+                            )
+                            .foregroundColor(
+                                selectedCategory == category ? Color.accentColor : Color.primary
+                            )
                             .clipShape(Capsule())
                     }
                 }
@@ -405,37 +409,160 @@ struct ItemImageView: View {
     }
 }
 
+
+struct CustomActionSheet: View {
+    @Binding var isPresented: Bool
+    @Binding var showCamera: Bool
+    @Binding var showImagePicker: Bool
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        if isPresented {
+            VStack(spacing: 0) {
+                Text("選擇照片來源")
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(colorScheme == .dark ? Color.black : Color.white)
+                    .foregroundColor(colorScheme == .dark ? .white : .blue)
+                
+                Divider()
+
+                Button("拍照") {
+                    showCamera = true
+                    isPresented = false
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(colorScheme == .dark ? Color.black : Color.white)
+                .foregroundColor(colorScheme == .dark ? .white : .blue)
+
+                Divider()
+
+                Button("從相簿選擇") {
+                    showImagePicker = true
+                    isPresented = false
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(colorScheme == .dark ? Color.black : Color.white)
+                .foregroundColor(colorScheme == .dark ? .white : .blue)
+
+                Divider()
+
+                Button("取消") {
+                    isPresented = false
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(colorScheme == .dark ? Color.black : Color.white)
+                .foregroundColor(.red)
+            }
+            .background(.ultraThinMaterial)
+            .cornerRadius(12)
+            .padding()
+            .shadow(radius: 10)
+        }
+    }
+}
+
+import SwiftUI
+
 struct AddButton: View {
     @Binding var showActionSheet: Bool
     @Binding var showCamera: Bool
     @Binding var showImagePicker: Bool
-    
+    @Environment(\.colorScheme) var colorScheme
+
     var body: some View {
-        Button(action: {
-            showActionSheet = true
-        }) {
-            Image(systemName: "plus")
-                .font(.largeTitle)
-                .foregroundColor(.white)
-                .frame(width: 60, height: 60)
-                .background(Color.black)
-                .clipShape(Circle())
-                .shadow(radius: 5)
-        }
-        .padding(.bottom, 30)
-        .confirmationDialog("選擇照片來源", isPresented: $showActionSheet, titleVisibility: .visible) {
-            Button("拍照") {
-                showCamera = true
+        GeometryReader { geometry in
+            ZStack {
+                // + 按鈕固定在底部中間
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            withAnimation {
+                                showActionSheet = true
+                            }
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.largeTitle)
+                                .foregroundColor(colorScheme == .dark ? .black : .white)
+                                .frame(width: 60, height: 60)
+                                .background(colorScheme == .dark ? Color.white : Color.black)
+                                .clipShape(Circle())
+                                .shadow(radius: 5)
+                        }
+                        .padding(.bottom, 30)
+                        Spacer()
+
+                    }
+                }
+
+                // Action Sheet 自訂樣式
+                if showActionSheet {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation {
+                                showActionSheet = false
+                            }
+                        }
+
+                    VStack(spacing: 0) {
+                       
+                        Button("拍照") {
+                            showCamera = true
+                            withAnimation {
+                                showActionSheet = false
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(colorScheme == .dark ? Color.black : Color.white)
+                        .foregroundColor(colorScheme == .dark ? .white : .blue)
+
+                        Divider()
+
+                        Button("從相簿選擇") {
+                            showImagePicker = true
+                            withAnimation {
+                                showActionSheet = false
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(colorScheme == .dark ? Color.black : Color.white)
+                        .foregroundColor(colorScheme == .dark ? .white : .blue)
+
+                        Divider()
+
+                        Button("取消") {
+                            withAnimation {
+                                showActionSheet = false
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(colorScheme == .dark ? Color.black : Color.white)
+                        .foregroundColor(.red)
+                    }
+                    .cornerRadius(12)
+                    .frame(maxWidth: 327)
+                    .shadow(radius: 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .position(x: geometry.size.width - 200, y: geometry.size.height - 100) // 出現在 + 上方
+                }
             }
-            Button("從相簿選擇") {
-                showImagePicker = true
-            }
-            Button("取消", role: .cancel) {}
         }
     }
 }
 
 
+
+
 #Preview {
-    ContentView()
+    ContentView(categoryStore: CategoryStore())
 }

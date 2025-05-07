@@ -8,10 +8,15 @@
 import SwiftUI
 
 @main
-struct mythingsApp: App {
+struct MyThingsApp: App {
+    @AppStorage("isDarkMode") private var isDarkMode = false
+    @StateObject var categoryStore = CategoryStore()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(categoryStore: categoryStore)
+                .preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }
+

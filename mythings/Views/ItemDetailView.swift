@@ -26,28 +26,26 @@ struct ItemDetailView: View {
             Text(item.name)
                 .font(.title2)
                 .padding(.vertical)
-           /* Text("\(item.brand) · \(item.category)")
+           Text("\(item.brand) · \(item.category)")
                 .foregroundColor(.gray)
-                .padding(.bottom, 4) */
-            HStack{
+                .padding(.bottom, 4)
+            /*  HStack{
                 Text("\(item.brand) ·")
                 Text("\(item.category)")
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .font(.caption)
-                    .background(Color(UIColor.systemGray5))
-                    .foregroundColor(Color.black)
+                    .background(Color.primary)
+                    .foregroundColor(Color.accentColor)
                     .clipShape(Capsule())
-            }
+            }*/
             .padding(.bottom, 4)
             if let price = Double(item.price) {
                 Text("$\(formattedPrice(price))")
                     .font(.callout)
-                    .foregroundColor(.black)
             } else {
                 Text("$\(item.price)")
                     .font(.callout)
-                    .foregroundColor(.black)
             }
         }
         .padding()
