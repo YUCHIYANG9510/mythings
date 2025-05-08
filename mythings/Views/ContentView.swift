@@ -13,13 +13,11 @@ import Foundation
 enum NavigationTarget: Hashable {
     case settings
 }
-// First, let's create a simple image cache manager
 class ImageCacheManager: ObservableObject {
     static let shared = ImageCacheManager()
     @Published var cacheInvalidationTrigger = UUID()
     
     func invalidateCache() {
-        // This will trigger any views observing this object to refresh
         cacheInvalidationTrigger = UUID()
     }
 }
