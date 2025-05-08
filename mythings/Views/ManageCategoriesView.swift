@@ -32,6 +32,7 @@ struct ManageCategoriesView: View {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.blue)
                             Text("Add Category")
+                                .foregroundStyle(.black)
                         }
                     }
                 }
@@ -44,11 +45,14 @@ struct ManageCategoriesView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(.blue)
                 }
             }
             .sheet(isPresented: $showAddCategoryView) {
                 AddCategoryView(categoryStore: categoryStore)
             }
         }
+        .toolbarColorScheme(.light) // For light mode navigation buttons
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }

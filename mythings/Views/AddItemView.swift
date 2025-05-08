@@ -176,11 +176,7 @@ struct AddItemView: View {
                     .foregroundColor(.blue) // 設定為藍色
                 }
             }
-            .background(
-                NavigationConfigurator { navController in
-                    navController.navigationBar.tintColor = .systemBlue // 設定導航欄按鈕顏色
-                }
-            )
+           
         }
         .sheet(isPresented: $showCategoryManagement) {
             ManageCategoriesView(categoryStore: categoryStore)

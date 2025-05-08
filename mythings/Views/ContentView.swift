@@ -103,6 +103,7 @@ struct ContentView: View {
                 }
             }
         }
+
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
         }
@@ -215,7 +216,7 @@ struct HeaderView: View {
                 Image(systemName: "gearshape.fill")
                     .font(.title2)
                     .padding(.leading)
-                    .foregroundStyle(Color.primary)
+                    .foregroundColor(.primary)
             }
 
             Spacer()
@@ -252,7 +253,7 @@ struct CategoryScrollView: View {
                                 selectedCategory == category ? Color.primary : Color.gray.opacity(0.2)
                             )
                             .foregroundColor(
-                                selectedCategory == category ? Color.accentColor : Color.primary
+                                selectedCategory == category ? Color.textcolor : Color.primary
                             )
                             .clipShape(Capsule())
                     }
@@ -466,7 +467,6 @@ struct CustomActionSheet: View {
     }
 }
 
-import SwiftUI
 
 struct AddButton: View {
     @Binding var showActionSheet: Bool
