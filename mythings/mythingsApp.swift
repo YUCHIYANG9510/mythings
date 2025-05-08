@@ -15,8 +15,7 @@ struct MyThingsApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(categoryStore: categoryStore)
-                .preferredColorScheme(isDarkMode ? .dark : .light)
-                // We'll handle accent color differently to avoid affecting category buttons
+                    .preferredColorScheme(isDarkMode ? .dark : .light)
         }
     }
 }

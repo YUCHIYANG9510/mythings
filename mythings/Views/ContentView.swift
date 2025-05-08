@@ -38,22 +38,22 @@ struct ContentView: View {
     @State private var path: [NavigationTarget] = []
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
-
-
+    
+    
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
-
+    
     var categoryNames: [String] {
         var names = ["All"]
         names.append(contentsOf: categoryStore.categories.map { $0.name })
         return names
     }
-
+    
     var filteredItems: [Item] {
         selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
     }
-
+    
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
@@ -61,12 +61,12 @@ struct ContentView: View {
                     HeaderView {
                         path.append(.settings)
                     }
-
+                    
                     CategoryScrollView(
                         categoryNames: categoryNames,
                         selectedCategory: $selectedCategory
                     )
-
+                    
                     ItemsGridView(
                         filteredItems: filteredItems,
                         selectedItem: $selectedItem,
@@ -89,7 +89,7 @@ struct ContentView: View {
                             }
                     )
                 }
-
+                
                 AddButton(
                     showActionSheet: $showActionSheet,
                     showCamera: $showCamera,
@@ -103,7 +103,7 @@ struct ContentView: View {
                 }
             }
         }
-
+        .accentColor(.primary)
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
         }
@@ -160,10 +160,10 @@ struct ContentView: View {
             loadItems()
         }
     }
-
+    
     private func changeCategoryOnSwipe(_ translationWidth: CGFloat) {
         guard !categoryNames.isEmpty else { return }
-
+        
         if let currentIndex = categoryNames.firstIndex(of: selectedCategory) {
             var newIndex: Int
             if translationWidth < 0 {
@@ -171,19 +171,19 @@ struct ContentView: View {
             } else {
                 newIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
             }
-
+            
             if categoryNames[newIndex] != selectedCategory {
                 selectedCategory = categoryNames[newIndex]
                 triggerHapticFeedback()
             }
         }
     }
-
+    
     private func triggerHapticFeedback() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
     }
-
+    
     private func saveItems() {
         do {
             let data = try JSONEncoder().encode(items)
@@ -192,7 +192,7 @@ struct ContentView: View {
             print("儲存失敗：\(error)")
         }
     }
-
+    
     private func loadItems() {
         do {
             let data = try Data(contentsOf: savePath)
@@ -207,7 +207,7 @@ struct ContentView: View {
 // MARK: - Subviews
 struct HeaderView: View {
     var navigateToSettings: () -> Void
-
+    
     var body: some View {
         HStack {
             Button(action: {
@@ -218,15 +218,15 @@ struct HeaderView: View {
                     .padding(.leading)
                     .foregroundColor(.primary)
             }
-
+            
             Spacer()
-
+            
             Text("My Things")
                 .font(.title3)
                 .bold()
-
+            
             Spacer()
-
+            
             Spacer().frame(width: 40)
         }
         .padding(.vertical)
@@ -397,11 +397,11 @@ struct ItemImageView: View {
         }
         .onAppear(perform: loadImage)
         .onChange(of: cacheManager.cacheInvalidationTrigger) {
-                    loadImage()
-                }
-                .onChange(of: imageName) {
-                    loadImage()
-                }
+            loadImage()
+        }
+        .onChange(of: imageName) {
+            loadImage()
+        }
     }
     
     private func loadImage() {
@@ -416,7 +416,7 @@ struct CustomActionSheet: View {
     @Binding var showCamera: Bool
     @Binding var showImagePicker: Bool
     @Environment(\.colorScheme) var colorScheme
-
+    
     var body: some View {
         if isPresented {
             VStack(spacing: 0) {
@@ -428,7 +428,7 @@ struct CustomActionSheet: View {
                     .foregroundColor(colorScheme == .dark ? .white : .blue)
                 
                 Divider()
-
+                
                 Button("拍照") {
                     showCamera = true
                     isPresented = false
@@ -437,9 +437,9 @@ struct CustomActionSheet: View {
                 .padding()
                 .background(colorScheme == .dark ? Color.black : Color.white)
                 .foregroundColor(colorScheme == .dark ? .white : .blue)
-
+                
                 Divider()
-
+                
                 Button("從相簿選擇") {
                     showImagePicker = true
                     isPresented = false
@@ -448,9 +448,9 @@ struct CustomActionSheet: View {
                 .padding()
                 .background(colorScheme == .dark ? Color.black : Color.white)
                 .foregroundColor(colorScheme == .dark ? .white : .blue)
-
+                
                 Divider()
-
+                
                 Button("取消") {
                     isPresented = false
                 }
@@ -473,7 +473,7 @@ struct AddButton: View {
     @Binding var showCamera: Bool
     @Binding var showImagePicker: Bool
     @Environment(\.colorScheme) var colorScheme
-
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -497,10 +497,10 @@ struct AddButton: View {
                         }
                         .padding(.bottom, 30)
                         Spacer()
-
+                        
                     }
                 }
-
+                
                 // Action Sheet 自訂樣式
                 if showActionSheet {
                     Color.black.opacity(0.3)
@@ -510,9 +510,9 @@ struct AddButton: View {
                                 showActionSheet = false
                             }
                         }
-
+                    
                     VStack(spacing: 0) {
-                       
+                        
                         Button("拍照") {
                             showCamera = true
                             withAnimation {
@@ -523,9 +523,9 @@ struct AddButton: View {
                         .padding()
                         .background(colorScheme == .dark ? Color.black : Color.white)
                         .foregroundColor(colorScheme == .dark ? .white : .blue)
-
+                        
                         Divider()
-
+                        
                         Button("從相簿選擇") {
                             showImagePicker = true
                             withAnimation {
@@ -536,9 +536,9 @@ struct AddButton: View {
                         .padding()
                         .background(colorScheme == .dark ? Color.black : Color.white)
                         .foregroundColor(colorScheme == .dark ? .white : .blue)
-
+                        
                         Divider()
-
+                        
                         Button("取消") {
                             withAnimation {
                                 showActionSheet = false

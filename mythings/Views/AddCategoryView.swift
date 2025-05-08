@@ -26,6 +26,7 @@ struct AddCategoryView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(.blue)
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -33,10 +34,12 @@ struct AddCategoryView: View {
                         if categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             showAlert = true
                         } else {
-                            categoryStore.addCategory(name: categoryName, color: "blue") // 固定為 blue
+                            categoryStore.addCategory(name: categoryName)
                             dismiss()
                         }
                     }
+                    .foregroundColor(.blue)
+
                 }
             }
             .alert("Please enter a category name", isPresented: $showAlert) {

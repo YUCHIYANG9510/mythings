@@ -12,7 +12,6 @@ struct ManageCategoriesView: View {
     @State private var showAddCategoryView = false
     
     var body: some View {
-        NavigationView {
             VStack(spacing: 20) {
                 List {
                     ForEach(categoryStore.categories) { category in
@@ -32,7 +31,7 @@ struct ManageCategoriesView: View {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.blue)
                             Text("Add Category")
-                                .foregroundStyle(.black)
+                                .foregroundColor(.blue)
                         }
                     }
                 }
@@ -50,9 +49,10 @@ struct ManageCategoriesView: View {
             }
             .sheet(isPresented: $showAddCategoryView) {
                 AddCategoryView(categoryStore: categoryStore)
+                    .presentationDetents([.height(300)])
+
             }
-        }
-        .toolbarColorScheme(.light) // For light mode navigation buttons
-        .navigationViewStyle(StackNavigationViewStyle())
+        
+
     }
 }

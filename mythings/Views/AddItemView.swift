@@ -15,7 +15,8 @@ struct AddItemView: View {
     @ObservedObject var categoryStore: CategoryStore
     @ObservedObject var brandStore: BrandStore
     @Binding var showManageCategories: Bool
-    
+    @Environment(\.colorScheme) var colorScheme
+
     @Environment(\.dismiss) var dismiss
     var onComplete: (Item) -> Void
     @State private var name: String = ""
@@ -25,7 +26,7 @@ struct AddItemView: View {
     @State private var showValidationAlert = false
     @State private var showCategoryManagement = false
     @State private var showImagePicker = false
-   
+
     var body: some View {
         NavigationView {
             Form {
@@ -89,7 +90,7 @@ struct AddItemView: View {
                                             brand = brandName
                                         }) {
                                             Text(brandName)
-                                                .foregroundColor(.black)
+                                                .foregroundColor(colorScheme == .dark ? .white : .black)
                                                 .font(.caption)
                                         }
 
@@ -127,7 +128,7 @@ struct AddItemView: View {
                     }) {
                         HStack {
                             Text("Manage Categories")
-                                .foregroundColor(.black)
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundColor(.gray)
@@ -142,7 +143,7 @@ struct AddItemView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundColor(.blue) // 設定為藍色
+                    .foregroundColor(.blue)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -173,13 +174,15 @@ struct AddItemView: View {
                             showValidationAlert = true
                         }
                     }
-                    .foregroundColor(.blue) // 設定為藍色
+                    .foregroundColor(.blue)
                 }
             }
            
         }
         .sheet(isPresented: $showCategoryManagement) {
             ManageCategoriesView(categoryStore: categoryStore)
+                .presentationDetents([.height(600)])
+
         }
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(image: $selectedImage)
