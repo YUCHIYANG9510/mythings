@@ -13,6 +13,12 @@ import Foundation
 enum NavigationTarget: Hashable {
     case settings
 }
+
+enum ViewMode {
+    case grid
+    case list
+}
+
 class ImageCacheManager: ObservableObject {
     static let shared = ImageCacheManager()
     @Published var cacheInvalidationTrigger = UUID()
@@ -21,6 +27,7 @@ class ImageCacheManager: ObservableObject {
         cacheInvalidationTrigger = UUID()
     }
 }
+
 struct ContentView: View {
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
@@ -36,6 +43,7 @@ struct ContentView: View {
     @State private var path: [NavigationTarget] = []
     @State private var isSearching = false
     @State private var searchText = ""
+    @State private var viewMode: ViewMode = .grid // New state for view mode
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     
@@ -70,38 +78,62 @@ struct ContentView: View {
                     HeaderView(
                         isSearching: $isSearching,
                         text: $searchText,
+                        viewMode: $viewMode,
                         navigateToSettings: {
                             path.append(.settings)
                         }
                     )
-                    
                     
                     CategoryScrollView(
                         categoryNames: categoryNames,
                         selectedCategory: $selectedCategory
                     )
                     
-                    ItemsGridView(
-                        filteredItems: filteredItems,
-                        selectedItem: $selectedItem,
-                        editingItem: $editingItem,
-                        items: $items,
-                        saveItems: saveItems
-                    )
-                    .gesture(
-                        DragGesture()
-                            .onChanged { gesture in
-                                self.dragOffset = gesture.translation
-                            }
-                            .onEnded { gesture in
-                                if abs(gesture.translation.width) > abs(gesture.translation.height) {
-                                    if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
-                                        changeCategoryOnSwipe(gesture.translation.width)
-                                    }
+                    if viewMode == .grid {
+                        ItemsGridView(
+                            filteredItems: filteredItems,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                        .gesture(
+                            DragGesture()
+                                .onChanged { gesture in
+                                    self.dragOffset = gesture.translation
                                 }
-                                self.dragOffset = .zero
-                            }
-                    )
+                                .onEnded { gesture in
+                                    if abs(gesture.translation.width) > abs(gesture.translation.height) {
+                                        if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
+                                            changeCategoryOnSwipe(gesture.translation.width)
+                                        }
+                                    }
+                                    self.dragOffset = .zero
+                                }
+                        )
+                    } else {
+                        ItemsListView(
+                            filteredItems: filteredItems,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                        .gesture(
+                            DragGesture()
+                                .onChanged { gesture in
+                                    self.dragOffset = gesture.translation
+                                }
+                                .onEnded { gesture in
+                                    if abs(gesture.translation.width) > abs(gesture.translation.height) {
+                                        if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
+                                            changeCategoryOnSwipe(gesture.translation.width)
+                                        }
+                                    }
+                                    self.dragOffset = .zero
+                                }
+                        )
+                    }
                 }
                 
                 AddButton(
@@ -139,6 +171,8 @@ struct ContentView: View {
         }
         .sheet(item: $selectedItem) { item in
             ItemDetailView(item: item)
+            .presentationDetents([.height(550)])
+
         }
         .sheet(item: $editingItem) { editing in
             AddItemView(
@@ -221,6 +255,7 @@ struct ContentView: View {
 struct HeaderView: View {
     @Binding var isSearching: Bool
     @Binding var text: String
+    @Binding var viewMode: ViewMode
     var navigateToSettings: () -> Void
     
     var body: some View {
@@ -278,6 +313,17 @@ struct HeaderView: View {
                 
                 Button(action: {
                     withAnimation {
+                        viewMode = viewMode == .grid ? .list : .grid
+                    }
+                }) {
+                    Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
+                        .font(.title2)
+                        .foregroundColor(.primary)
+                }
+                .padding(.trailing, 8)
+                
+                Button(action: {
+                    withAnimation {
                         isSearching = true
                     }
                 }) {
@@ -293,6 +339,140 @@ struct HeaderView: View {
 }
 
 
+struct ItemsListView: View {
+    let filteredItems: [Item]
+    @Binding var selectedItem: Item?
+    @Binding var editingItem: Item?
+    @Binding var items: [Item]
+    let saveItems: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            if filteredItems.isEmpty {
+                EmptyStateView()
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(filteredItems) { item in
+                        ListItemCell(
+                            item: item,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding(.top, 16)
+    }
+}
+
+struct ListItemCell: View {
+    let item: Item
+    @Binding var selectedItem: Item?
+    @Binding var editingItem: Item?
+    @Binding var items: [Item]
+    let saveItems: () -> Void
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ListItemImageView(imageName: item.imageName)
+                .frame(width: 80, height: 80)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(item.brand) · \(item.category)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                Text(item.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+
+            if let price = Double(item.price) {
+                Text("$\(formattedPrice(price))")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            } else {
+                Text("$\(item.price)")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+            }
+            
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+        .onTapGesture {
+            selectedItem = item
+        }
+        .contextMenu {
+            Button("編輯") {
+                editingItem = item
+            }
+            Button("刪除", role: .destructive) {
+                items.removeAll { $0.id == item.id }
+                saveItems()
+            }
+        }
+    }
+    
+    private func formattedPrice(_ price: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
+    }
+}
+
+struct ListItemImageView: View {
+    let imageName: String
+    @StateObject private var cacheManager = ImageCacheManager.shared
+    @State private var image: UIImage?
+    
+    var body: some View {
+        Group {
+            if let image = image {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                       
+                }
+                .frame(width: 80, height: 80)
+            } else {
+                ZStack {
+                    Color(.systemGray6)
+                    Image(systemName: "photo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 30)
+                        .foregroundColor(.gray)
+                }
+                .frame(width: 80, height: 80)
+            }
+        }
+        .onAppear(perform: loadImage)
+        .onChange(of: cacheManager.cacheInvalidationTrigger) {
+            loadImage()
+        }
+        .onChange(of: imageName) {
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
+        image = UIImage(contentsOfFile: imagePath)
+    }
+}
 
 struct CategoryScrollView: View {
     let categoryNames: [String]
@@ -438,7 +618,6 @@ struct ItemImageView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(height: 120)
-                        .cornerRadius(8)
                 }
                 .frame(height: 150)
                 .cornerRadius(8)
@@ -480,14 +659,6 @@ struct CustomActionSheet: View {
     var body: some View {
         if isPresented {
             VStack(spacing: 0) {
-                Text("選擇照片來源")
-                    .font(.headline)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(colorScheme == .dark ? Color.black : Color.white)
-                    .foregroundColor(colorScheme == .dark ? .white : .blue)
-                
-                Divider()
                 
                 Button("拍照") {
                     showCamera = true
