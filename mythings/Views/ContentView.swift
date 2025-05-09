@@ -34,6 +34,7 @@ struct ContentView: View {
     @State private var isAddingNewItem = false
     @State private var dragOffset = CGSize.zero
     @State private var path: [NavigationTarget] = []
+    @State private var searchText = ""
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     
@@ -49,7 +50,15 @@ struct ContentView: View {
     }
     
     var filteredItems: [Item] {
-        selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
+        let categoryFiltered = selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
+        if searchText.isEmpty {
+            return categoryFiltered
+        } else {
+            return categoryFiltered.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.brand.localizedCaseInsensitiveContains(searchText)
+            }
+        }
     }
     
     var body: some View {
@@ -59,6 +68,9 @@ struct ContentView: View {
                     HeaderView {
                         path.append(.settings)
                     }
+                    
+                    SearchBarView(text: $searchText)
+
                     
                     CategoryScrollView(
                         categoryNames: categoryNames,
@@ -202,7 +214,6 @@ struct ContentView: View {
 }
 
 
-// MARK: - Subviews
 struct HeaderView: View {
     var navigateToSettings: () -> Void
     
@@ -228,6 +239,33 @@ struct HeaderView: View {
             Spacer().frame(width: 40)
         }
         .padding(.vertical)
+    }
+}
+
+struct SearchBarView: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack {
+            Image(systemName: "magnifyingglass")
+            TextField("Search items", text: $text)
+                .textFieldStyle(PlainTextFieldStyle())
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            if !text.isEmpty {
+                Button(action: {
+                    text = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6))
+        .cornerRadius(10)
+        .padding(.horizontal)
+        .padding(.bottom)
     }
 }
 
