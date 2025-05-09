@@ -34,6 +34,7 @@ struct ContentView: View {
     @State private var isAddingNewItem = false
     @State private var dragOffset = CGSize.zero
     @State private var path: [NavigationTarget] = []
+    @State private var isSearching = false
     @State private var searchText = ""
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
@@ -51,6 +52,7 @@ struct ContentView: View {
     
     var filteredItems: [Item] {
         let categoryFiltered = selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
+
         if searchText.isEmpty {
             return categoryFiltered
         } else {
@@ -65,12 +67,14 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 VStack {
-                    HeaderView {
-                        path.append(.settings)
-                    }
+                    HeaderView(
+                        isSearching: $isSearching,
+                        text: $searchText,
+                        navigateToSettings: {
+                            path.append(.settings)
+                        }
+                    )
                     
-                    SearchBarView(text: $searchText)
-
                     
                     CategoryScrollView(
                         categoryNames: categoryNames,
@@ -215,59 +219,79 @@ struct ContentView: View {
 
 
 struct HeaderView: View {
+    @Binding var isSearching: Bool
+    @Binding var text: String
     var navigateToSettings: () -> Void
     
     var body: some View {
         HStack {
-            Button(action: {
-                navigateToSettings()
-            }) {
-                Image(systemName: "gearshape.fill")
-                    .font(.title2)
-                    .padding(.leading)
-                    .foregroundColor(.primary)
+            if isSearching {
+                HStack {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                        TextField("搜尋名稱或品牌", text: $text)
+                            .textFieldStyle(PlainTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        if !text.isEmpty {
+                            Button(action: {
+                                text = ""
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                    
+                    
+                    Button("Cancel") {
+                        withAnimation {
+                            isSearching = false
+                            text = ""
+                        }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
+                .padding(.horizontal)
+                
+            } else {
+                Button(action: {
+                    navigateToSettings()
+                }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title2)
+                        .padding(.leading)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                Text("My Things")
+                    .font(.title3)
+                    .bold()
+                
+                Spacer()
+                
+                Button(action: {
+                    withAnimation {
+                        isSearching = true
+                    }
+                }) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title2)
+                        .padding(.trailing)
+                        .foregroundColor(.primary)
+                }
             }
-            
-            Spacer()
-            
-            Text("My Things")
-                .font(.title3)
-                .bold()
-            
-            Spacer()
-            
-            Spacer().frame(width: 40)
         }
         .padding(.vertical)
     }
 }
 
-struct SearchBarView: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-            TextField("Search items", text: $text)
-                .textFieldStyle(PlainTextFieldStyle())
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-            if !text.isEmpty {
-                Button(action: {
-                    text = ""
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.gray)
-                }
-            }
-        }
-        .padding(10)
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
-        .padding(.horizontal)
-        .padding(.bottom)
-    }
-}
 
 
 struct CategoryScrollView: View {
