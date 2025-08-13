@@ -191,7 +191,8 @@ struct ContentView: View {
 
         .sheet(item: $selectedItem) { item in
             ItemDetailView(item: item)
-            .presentationDetents([.height(550)])
+                .presentationDetents([.fraction(0.7)])
+                .presentationCornerRadius(40)
 
         }
         .sheet(item: $editingItem) { editing in
