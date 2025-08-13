@@ -142,11 +142,12 @@ struct ContentView: View {
                     }
                 }
                 
-                AddButton(
-                    showActionSheet: $showActionSheet,
+                FloatingAddMenu(
+                    isOpen: $showActionSheet,
                     showCamera: $showCamera,
                     showImagePicker: $showImagePicker
                 )
+
             }
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
@@ -187,6 +188,7 @@ struct ContentView: View {
                     }
                 }
         }
+
         .sheet(item: $selectedItem) { item in
             ItemDetailView(item: item)
             .presentationDetents([.height(550)])
@@ -707,146 +709,143 @@ struct ItemImageView: View {
 }
 
 
-struct CustomActionSheet: View {
-    @Binding var isPresented: Bool
+
+
+struct FloatingAddMenu: View {
+    @Binding var isOpen: Bool
     @Binding var showCamera: Bool
     @Binding var showImagePicker: Bool
-    @Environment(\.colorScheme) var colorScheme
-    
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showFirstButton = false
+    @State private var showSecondButton = false
+
     var body: some View {
-        if isPresented {
-            VStack(spacing: 0) {
-                
-                Button("拍照") {
-                    showCamera = true
-                    isPresented = false
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(colorScheme == .dark ? Color.black : Color.white)
-                .foregroundColor(colorScheme == .dark ? .white : .blue)
-                
-                Divider()
-                
-                Button("從相簿選擇") {
-                    showImagePicker = true
-                    isPresented = false
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(colorScheme == .dark ? Color.black : Color.white)
-                .foregroundColor(colorScheme == .dark ? .white : .blue)
-                
-                Divider()
-                
-                Button("取消") {
-                    isPresented = false
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(colorScheme == .dark ? Color.black : Color.white)
-                .foregroundColor(.red)
+        ZStack {
+            if isOpen {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture { toggle(false) }
             }
-            .background(.ultraThinMaterial)
-            .cornerRadius(12)
-            .padding()
-            .shadow(radius: 10)
-        }
-    }
-}
 
-
-struct AddButton: View {
-    @Binding var showActionSheet: Bool
-    @Binding var showCamera: Bool
-    @Binding var showImagePicker: Bool
-    @Environment(\.colorScheme) var colorScheme
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // + 按鈕固定在底部中間
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            withAnimation {
-                                showActionSheet = true
+            VStack {
+                Spacer()
+                
+                HStack {
+                    VStack(spacing: 16) {
+                        // 展開的選單按鈕
+                        if isOpen {
+                            HStack(spacing: 12) {
+                                // 第一個按鈕 - 相簿
+                                CircularIconButton(
+                                    system: "photo.on.rectangle",
+                                    label: "相簿",
+                                    isVisible: showFirstButton
+                                ) {
+                                    toggle(false)
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    showImagePicker = true
+                                }
+                                
+                                // 第二個按鈕 - 拍照
+                                CircularIconButton(
+                                    system: "camera.fill",
+                                    label: "拍照",
+                                    isVisible: showSecondButton
+                                ) {
+                                    toggle(false)
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    showCamera = true
+                                }
                             }
-                        }) {
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .move(edge: .bottom).combined(with: .opacity)
+                            ))
+                        }
+                        
+                        // 主 FAB
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            toggle(!isOpen)
+                        } label: {
                             Image(systemName: "plus")
-                                .font(.largeTitle)
-                                .foregroundColor(colorScheme == .dark ? .black : .white)
+                                .font(.title2.bold())
                                 .frame(width: 60, height: 60)
+                                .foregroundStyle(colorScheme == .dark ? .black : .white)
                                 .background(colorScheme == .dark ? Color.white : Color.black)
                                 .clipShape(Circle())
-                                .shadow(radius: 5)
+                                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                                .scaleEffect(isOpen ? 0.9 : 1.0) // 點擊時微縮
+                                .rotationEffect(.degrees(isOpen ? 45 : 0)) // 加號旋轉45度變成 X 形狀
                         }
-                        .padding(.bottom, 30)
-                        Spacer()
-                        
                     }
+                    .frame(width: 60)
+                    .frame(width: 60)
                 }
                 
-                // Action Sheet 自訂樣式
-                if showActionSheet {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation {
-                                showActionSheet = false
-                            }
-                        }
-                    
-                    VStack(spacing: 0) {
-                        
-                        Button("拍照") {
-                            showCamera = true
-                            withAnimation {
-                                showActionSheet = false
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(colorScheme == .dark ? Color.black : Color.white)
-                        .foregroundColor(colorScheme == .dark ? .white : .blue)
-                        
-                        Divider()
-                        
-                        Button("從相簿選擇") {
-                            showImagePicker = true
-                            withAnimation {
-                                showActionSheet = false
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(colorScheme == .dark ? Color.black : Color.white)
-                        .foregroundColor(colorScheme == .dark ? .white : .blue)
-                        
-                        Divider()
-                        
-                        Button("取消") {
-                            withAnimation {
-                                showActionSheet = false
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(colorScheme == .dark ? Color.black : Color.white)
-                        .foregroundColor(.red)
-                    }
-                    .cornerRadius(12)
-                    .frame(maxWidth: 327)
-                    .shadow(radius: 10)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .position(x: geometry.size.width - 200, y: geometry.size.height - 100) // 出現在 + 上方
+                Spacer()
+                    .frame(height: 30)
+            }
+        }
+        .onChange(of: isOpen) { _, newValue in
+            if newValue {
+                // 展開時的錯開動畫
+                showFirstButton = false
+                showSecondButton = false
+                
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1)) {
+                    showFirstButton = true
                 }
+                
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.2)) {
+                    showSecondButton = true
+                }
+            } else {
+                // 收起時同時隱藏
+                showFirstButton = false
+                showSecondButton = false
             }
         }
     }
+
+    private func toggle(_ open: Bool) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            isOpen = open
+        }
+    }
 }
+
+private struct CircularIconButton: View {
+    let system: String
+    let label: String
+    let isVisible: Bool
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.title3.bold())
+                .frame(width: 60, height: 60)
+                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+                .background(colorScheme == .dark ? Color.black : Color.white)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+        }
+        .accessibilityLabel(Text(label))
+        .scaleEffect(isVisible ? (isPressed ? 0.9 : 1.0) : 0.1)
+        .opacity(isVisible ? 1.0 : 0.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isVisible)
+        .scaleEffect(isPressed ? 0.95 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: isPressed)
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+            isPressed = pressing
+        }, perform: {})
+    }
+}
+
 
 
 
