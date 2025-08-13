@@ -51,6 +51,8 @@ struct ContentView: View {
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     @State private var isRemovingBackground = false
+    @State private var dragVelocity: CGFloat = 0
+    @State private var isDragging = false
 
     
     
@@ -103,20 +105,8 @@ struct ContentView: View {
                             items: $items,
                             saveItems: saveItems
                         )
-                        .gesture(
-                            DragGesture()
-                                .onChanged { gesture in
-                                    self.dragOffset = gesture.translation
-                                }
-                                .onEnded { gesture in
-                                    if abs(gesture.translation.width) > abs(gesture.translation.height) {
-                                        if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
-                                            changeCategoryOnSwipe(gesture.translation.width)
-                                        }
-                                    }
-                                    self.dragOffset = .zero
-                                }
-                        )
+                        .offset(x: isDragging ? dragOffset.width * 0.1 : 0) // 添加微妙的視覺反饋
+                        .gesture(createSmoothDragGesture())
                     } else {
                         ItemsListView(
                             filteredItems: filteredItems,
@@ -125,20 +115,8 @@ struct ContentView: View {
                             items: $items,
                             saveItems: saveItems
                         )
-                        .gesture(
-                            DragGesture()
-                                .onChanged { gesture in
-                                    self.dragOffset = gesture.translation
-                                }
-                                .onEnded { gesture in
-                                    if abs(gesture.translation.width) > abs(gesture.translation.height) {
-                                        if abs(gesture.translation.width) > UIScreen.main.bounds.width * 0.05 {
-                                            changeCategoryOnSwipe(gesture.translation.width)
-                                        }
-                                    }
-                                    self.dragOffset = .zero
-                                }
-                        )
+                        .offset(x: isDragging ? dragOffset.width * 0.1 : 0) // 添加微妙的視覺反饋
+                        .gesture(createSmoothDragGesture())
                     }
                 }
                 
@@ -230,24 +208,66 @@ struct ContentView: View {
         }
     }
     
-    private func changeCategoryOnSwipe(_ translationWidth: CGFloat) {
+    // 優化後的拖拽手勢
+    private func createSmoothDragGesture() -> some Gesture {
+        DragGesture(minimumDistance: 10) // 增加最小距離避免誤觸
+            .onChanged { gesture in
+                isDragging = true
+                dragOffset = gesture.translation
+                
+                // 計算拖拽速度
+                dragVelocity = gesture.velocity.width
+            }
+            .onEnded { gesture in
+                isDragging = false
+                
+                // 使用速度和距離的組合來判斷是否切換分類
+                let swipeThreshold: CGFloat = UIScreen.main.bounds.width * 0.15
+                let velocityThreshold: CGFloat = 200
+                
+                let shouldSwipe = abs(gesture.translation.width) > swipeThreshold ||
+                abs(gesture.velocity.width) > velocityThreshold
+                
+                // 確保主要是水平滑動
+                if abs(gesture.translation.width) > abs(gesture.translation.height) && shouldSwipe {
+                    changeCategoryOnSwipe(gesture.translation.width, velocity: gesture.velocity.height)
+                }
+                
+                // 平滑地重置 dragOffset
+                withAnimation(.easeOut(duration: 0.3)) {
+                    dragOffset = .zero
+                }
+            }
+    }
+    // 優化後的分類切換函數
+    private func changeCategoryOnSwipe(_ translationX: CGFloat, velocity: CGFloat) {
         guard !categoryNames.isEmpty else { return }
         
         if let currentIndex = categoryNames.firstIndex(of: selectedCategory) {
             var newIndex: Int
-            if translationWidth < 0 {
+            
+            // 結合位移和速度來決定方向
+            let shouldMoveNext = translationX < 0 || (abs(translationX) < 50 && velocity < -100)
+            
+            if shouldMoveNext {
                 newIndex = (currentIndex + 1) % categoryNames.count
             } else {
                 newIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
             }
             
             if categoryNames[newIndex] != selectedCategory {
-                selectedCategory = categoryNames[newIndex]
-                triggerHapticFeedback()
+                // 使用彈性動畫切換分類
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    selectedCategory = categoryNames[newIndex]
+                }
+                
+                // 觸覺反饋
+                let impactGenerator = UIImpactFeedbackGenerator(style: .light)
+                impactGenerator.prepare()
+                impactGenerator.impactOccurred()
             }
         }
     }
-    
     private func triggerHapticFeedback() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
