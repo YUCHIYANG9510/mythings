@@ -9,6 +9,10 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import Foundation
+import Vision
+import CoreImage
+import CoreImage.CIFilterBuiltins
+
 
 enum NavigationTarget: Hashable {
     case settings
@@ -46,6 +50,8 @@ struct ContentView: View {
     @State private var viewMode: ViewMode = .grid // New state for view mode
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
+    @State private var isRemovingBackground = false
+
     
     
     private var savePath: URL {
@@ -156,16 +162,28 @@ struct ContentView: View {
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
-                    if selectedImage != nil {
-                        isAddingNewItem = true
+                    guard let img = selectedImage else { return }   // 取消就不處理
+                    Task {
+                        isRemovingBackground = true
+                        if let cut = await removeBackground(from: img) {
+                            selectedImage = cut
+                        }
+                        isRemovingBackground = false
+                        isAddingNewItem = (selectedImage != nil)     // 完成後再開 AddItemView
                     }
                 }
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker(selectedImage: $selectedImage)
                 .onDisappear {
-                    if selectedImage != nil {
-                        isAddingNewItem = true
+                    guard let img = selectedImage else { return }
+                    Task {
+                        isRemovingBackground = true
+                        if let cut = await removeBackground(from: img) {
+                            selectedImage = cut
+                        }
+                        isRemovingBackground = false
+                        isAddingNewItem = (selectedImage != nil)
                     }
                 }
         }
@@ -249,6 +267,45 @@ struct ContentView: View {
             print("讀取失敗或尚無資料：\(error)")
         }
     }
+    
+    @MainActor
+    func removeBackground(from image: UIImage) async -> UIImage? {
+        guard let ciImage = CIImage(image: image) else { return nil }
+
+        // Vision 產生前景遮罩（iOS 17+）
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+
+        do {
+            try handler.perform([request])
+            guard let obs = request.results?.first as? VNInstanceMaskObservation else { return nil }
+
+            let maskBuffer = try obs.generateScaledMaskForImage(
+                forInstances: obs.allInstances,
+                from: handler
+            )
+            let maskCI  = CIImage(cvPixelBuffer: maskBuffer)
+            let extent  = ciImage.extent
+            let clearBG = CIImage(color: .clear).cropped(to: extent)
+
+            // 用遮罩把背景清空（保持透明）
+            let cut = CIFilter.blendWithMask()
+            cut.inputImage      = ciImage
+            cut.maskImage       = maskCI
+            cut.backgroundImage = clearBG
+
+            guard let output = cut.outputImage else { return nil }
+            let ctx = CIContext()
+            guard let cg = ctx.createCGImage(output, from: output.extent) else { return nil }
+
+            // 保留原圖的 scale & orientation
+            return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
+        } catch {
+            print("removeBackground error: \(error)")
+            return nil
+        }
+    }
+
 }
 
 
