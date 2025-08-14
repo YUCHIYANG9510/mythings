@@ -47,14 +47,23 @@ struct ContentView: View {
     @State private var path: [NavigationTarget] = []
     @State private var isSearching = false
     @State private var searchText = ""
-    @State private var viewMode: ViewMode = .grid // New state for view mode
+    @State private var viewMode: ViewMode = .grid
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     @State private var isRemovingBackground = false
     @State private var dragVelocity: CGFloat = 0
     @State private var isDragging = false
-
     
+    // 新增的狀態變量用於傳送帶效果
+    @State private var categoryTransition: CategoryTransition = .none
+    @State private var nextCategory: String = ""
+    @State private var previousCategory: String = ""
+    
+    enum CategoryTransition {
+        case none
+        case toNext
+        case toPrevious
+    }
     
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
@@ -69,6 +78,36 @@ struct ContentView: View {
     var filteredItems: [Item] {
         let categoryFiltered = selectedCategory == "All" ? items : items.filter { $0.category == selectedCategory }
 
+        if searchText.isEmpty {
+            return categoryFiltered
+        } else {
+            return categoryFiltered.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.brand.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
+    
+    // 獲取下一個分類的物件
+    var nextCategoryItems: [Item] {
+        if nextCategory.isEmpty { return [] }
+        let categoryFiltered = nextCategory == "All" ? items : items.filter { $0.category == nextCategory }
+        
+        if searchText.isEmpty {
+            return categoryFiltered
+        } else {
+            return categoryFiltered.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.brand.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+    }
+    
+    // 獲取上一個分類的物件
+    var previousCategoryItems: [Item] {
+        if previousCategory.isEmpty { return [] }
+        let categoryFiltered = previousCategory == "All" ? items : items.filter { $0.category == previousCategory }
+        
         if searchText.isEmpty {
             return categoryFiltered
         } else {
@@ -97,27 +136,20 @@ struct ContentView: View {
                         selectedCategory: $selectedCategory
                     )
                     
-                    if viewMode == .grid {
-                        ItemsGridView(
-                            filteredItems: filteredItems,
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems
-                        )
-                        .offset(x: isDragging ? dragOffset.width * 0.1 : 0) // 添加微妙的視覺反饋
-                        .gesture(createSmoothDragGesture())
-                    } else {
-                        ItemsListView(
-                            filteredItems: filteredItems,
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems
-                        )
-                        .offset(x: isDragging ? dragOffset.width * 0.1 : 0) // 添加微妙的視覺反饋
-                        .gesture(createSmoothDragGesture())
-                    }
+                    // 傳送帶容器
+                    ConveyorBeltContainer(
+                        viewMode: viewMode,
+                        currentItems: filteredItems,
+                        nextItems: nextCategoryItems,
+                        previousItems: previousCategoryItems,
+                        selectedItem: $selectedItem,
+                        editingItem: $editingItem,
+                        items: $items,
+                        saveItems: saveItems,
+                        dragOffset: dragOffset,
+                        categoryTransition: categoryTransition
+                    )
+                    .gesture(createConveyorDragGesture())
                 }
                 
                 FloatingAddMenu(
@@ -208,66 +240,112 @@ struct ContentView: View {
         }
     }
     
-    // 優化後的拖拽手勢
-    private func createSmoothDragGesture() -> some Gesture {
-        DragGesture(minimumDistance: 10) // 增加最小距離避免誤觸
+    // 傳送帶拖拽手勢
+    private func createConveyorDragGesture() -> some Gesture {
+        DragGesture(minimumDistance: 10)
             .onChanged { gesture in
                 isDragging = true
                 dragOffset = gesture.translation
-                
-                // 計算拖拽速度
                 dragVelocity = gesture.velocity.width
+                
+                // 更新預覽的分類
+                updatePreviewCategories(for: gesture.translation.width)
             }
             .onEnded { gesture in
                 isDragging = false
                 
-                // 使用速度和距離的組合來判斷是否切換分類
-                let swipeThreshold: CGFloat = UIScreen.main.bounds.width * 0.15
-                let velocityThreshold: CGFloat = 200
+                let swipeThreshold: CGFloat = UIScreen.main.bounds.width * 0.2
+                let velocityThreshold: CGFloat = 300
                 
                 let shouldSwipe = abs(gesture.translation.width) > swipeThreshold ||
-                abs(gesture.velocity.width) > velocityThreshold
+                                abs(gesture.velocity.width) > velocityThreshold
                 
-                // 確保主要是水平滑動
                 if abs(gesture.translation.width) > abs(gesture.translation.height) && shouldSwipe {
-                    changeCategoryOnSwipe(gesture.translation.width, velocity: gesture.velocity.height)
-                }
-                
-                // 平滑地重置 dragOffset
-                withAnimation(.easeOut(duration: 0.3)) {
-                    dragOffset = .zero
+                    performConveyorTransition(translationX: gesture.translation.width)
+                } else {
+                    // 回彈到原位
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        dragOffset = .zero
+                        categoryTransition = .none
+                    }
                 }
             }
     }
-    // 優化後的分類切換函數
-    private func changeCategoryOnSwipe(_ translationX: CGFloat, velocity: CGFloat) {
-        guard !categoryNames.isEmpty else { return }
+    
+    // 更新預覽分類
+    private func updatePreviewCategories(for translationX: CGFloat) {
+        guard let currentIndex = categoryNames.firstIndex(of: selectedCategory) else { return }
         
-        if let currentIndex = categoryNames.firstIndex(of: selectedCategory) {
-            var newIndex: Int
-            
-            // 結合位移和速度來決定方向
-            let shouldMoveNext = translationX < 0 || (abs(translationX) < 50 && velocity < -100)
-            
-            if shouldMoveNext {
-                newIndex = (currentIndex + 1) % categoryNames.count
-            } else {
-                newIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
-            }
-            
-            if categoryNames[newIndex] != selectedCategory {
-                // 使用彈性動畫切換分類
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    selectedCategory = categoryNames[newIndex]
-                }
-                
-                // 觸覺反饋
-                let impactGenerator = UIImpactFeedbackGenerator(style: .light)
-                impactGenerator.prepare()
-                impactGenerator.impactOccurred()
-            }
+        if translationX < -20 { // 向左滑動，顯示下一個分類
+            let nextIndex = (currentIndex + 1) % categoryNames.count
+            nextCategory = categoryNames[nextIndex]
+            categoryTransition = .toNext
+        } else if translationX > 20 { // 向右滑動，顯示上一個分類
+            let prevIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
+            previousCategory = categoryNames[prevIndex]
+            categoryTransition = .toPrevious
+        } else {
+            categoryTransition = .none
         }
     }
+    
+    // 執行傳送帶轉場
+    private func performConveyorTransition(translationX: CGFloat) {
+        guard let currentIndex = categoryNames.firstIndex(of: selectedCategory) else { return }
+        
+        let width = UIScreen.main.bounds.width
+        let duration = 0.22
+        
+        let targetCategory: String
+        let transition: CategoryTransition
+        let goingLeft = (translationX < 0) // 往左滑 → 顯示下一個
+        
+        if goingLeft {
+                let nextIndex = (currentIndex + 1) % categoryNames.count
+                targetCategory = categoryNames[nextIndex]
+                transition = .toNext
+            } else {
+                let prevIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
+                targetCategory = categoryNames[prevIndex]
+                transition = .toPrevious
+            }
+        
+        // 執行轉場動畫
+        categoryTransition = transition
+        
+        // 第 1 段：把「當前頁」滑出螢幕
+        withAnimation(.easeInOut(duration: duration)) {
+            dragOffset = CGSize(width: goingLeft ? -width : width, height: 0)
+        }
+        
+        // 在第 1 段動畫結束後，切換資料 & 預置下一頁在另一側邊緣，再滑到 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            // 切換到目標分類
+            selectedCategory = targetCategory
+            
+            // 清掉預覽狀態
+            nextCategory = ""
+            previousCategory = ""
+            
+            // 把新頁先擺在「另一側」邊緣，準備第 2 段滑入
+            dragOffset = CGSize(width: goingLeft ? width : -width, height: 0)
+            
+            // 第 2 段：把新頁滑回中心
+            withAnimation(.easeInOut(duration: duration)) {
+                dragOffset = .zero
+            }
+            
+            // 完成後結束轉場狀態
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                categoryTransition = .none
+            }
+        }
+        
+        // 觸覺反饋
+        let impactGenerator = UIImpactFeedbackGenerator(style: .light)
+        impactGenerator.impactOccurred()
+    }
+    
     private func triggerHapticFeedback() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
@@ -329,6 +407,52 @@ struct ContentView: View {
         }
     }
 
+}
+
+// 傳送帶容器視圖
+struct ConveyorBeltContainer: View {
+    let viewMode: ViewMode
+    let currentItems: [Item]
+    let nextItems: [Item]
+    let previousItems: [Item]
+    @Binding var selectedItem: Item?
+    @Binding var editingItem: Item?
+    @Binding var items: [Item]
+    let saveItems: () -> Void
+    let dragOffset: CGSize
+    let categoryTransition: ContentView.CategoryTransition
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // 當前內容
+                Group {
+                    if viewMode == .grid {
+                        ItemsGridView(
+                            filteredItems: currentItems,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                    } else {
+                        ItemsListView(
+                            filteredItems: currentItems,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                    }
+                }
+                .offset(x: dragOffset.width)
+                
+              
+                
+            }
+        }
+        .clipped() // 確保溢出的內容被裁剪
+    }
 }
 
 
