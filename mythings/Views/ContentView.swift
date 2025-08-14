@@ -49,6 +49,11 @@ struct ContentView: View {
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     @State private var isRemovingBackground = false
+    // 拖曳時預熱 Core Haptics
+    @State private var didPrepareHaptic = false
+    // 根據滑動速度估算的力度（0.5~1.0）
+    @State private var lastSwipeStrength: Double = 0.75
+
     
     // 🔹 用於原生分頁的索引，會與 selectedCategory 互相同步
     @State private var selectedPage: Int = 0
@@ -57,6 +62,11 @@ struct ContentView: View {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
     
+    // Haptic：選擇型回饋（適合分頁、選項切換）
+    private let selectionHaptic = UISelectionFeedbackGenerator()
+   
+
+
     var categoryNames: [String] {
         var names = ["All"]
         names.append(contentsOf: categoryStore.categories.map { $0.name })
@@ -103,6 +113,25 @@ struct ContentView: View {
                         saveItems: saveItems
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 6, coordinateSpace: .local)
+                            .onChanged { value in
+                                // 偵測明顯水平拖曳 → 預熱一次 Haptics
+                                if !didPrepareHaptic,
+                                   abs(value.translation.width) > abs(value.translation.height),
+                                   abs(value.translation.width) > 8 {
+                                    HapticsManager.shared.prepare()
+                                    didPrepareHaptic = true
+                                }
+                            }
+                            .onEnded { value in
+                                // 估算「速度」→ 轉成強度（0.5~1.0）
+                                let dx = value.predictedEndTranslation.width - value.translation.width
+                                let approxSpeed = min(1.0, max(0.0, Double(abs(dx) / 140.0))) // 140 可微調
+                                lastSwipeStrength = 0.5 + 0.5 * approxSpeed
+                                didPrepareHaptic = false
+                            }
+                    )
                 }
                 
                 FloatingAddMenu(
@@ -187,15 +216,18 @@ struct ContentView: View {
                 selectedPage = idx
             }
         }
+        .onChange(of: selectedPage) { _, newValue in
+            if categoryNames.indices.contains(newValue) {
+                // ✅ 分頁 settle 的瞬間：用 Core Haptics 播放更沉的觸感
+                HapticsManager.shared.pageSnap(strength: lastSwipeStrength)
+
+                let cat = categoryNames[newValue]
+                if cat != selectedCategory { selectedCategory = cat }
+            }
+        }
         .onChange(of: selectedCategory) { _, newValue in
             if let idx = categoryNames.firstIndex(of: newValue), idx != selectedPage {
                 selectedPage = idx
-            }
-        }
-        .onChange(of: selectedPage) { _, newValue in
-            if categoryNames.indices.contains(newValue) {
-                let cat = categoryNames[newValue]
-                if cat != selectedCategory { selectedCategory = cat }
             }
         }
     }
