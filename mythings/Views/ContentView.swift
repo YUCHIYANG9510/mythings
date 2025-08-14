@@ -53,6 +53,10 @@ struct ContentView: View {
     @State private var isRemovingBackground = false
     @State private var dragVelocity: CGFloat = 0
     @State private var isDragging = false
+    @State private var verticalScrollDisabled = false
+    
+    private enum PanLock { case none, horizontal, vertical }
+    @State private var panLock: PanLock = .none
     
     // 新增的狀態變量用於傳送帶效果
     @State private var categoryTransition: CategoryTransition = .none
@@ -88,33 +92,21 @@ struct ContentView: View {
         }
     }
     
-    // 獲取下一個分類的物件
     var nextCategoryItems: [Item] {
         if nextCategory.isEmpty { return [] }
         let categoryFiltered = nextCategory == "All" ? items : items.filter { $0.category == nextCategory }
-        
-        if searchText.isEmpty {
-            return categoryFiltered
-        } else {
-            return categoryFiltered.filter {
-                $0.name.localizedCaseInsensitiveContains(searchText) ||
-                $0.brand.localizedCaseInsensitiveContains(searchText)
-            }
+        return searchText.isEmpty ? categoryFiltered : categoryFiltered.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.brand.localizedCaseInsensitiveContains(searchText)
         }
     }
     
-    // 獲取上一個分類的物件
     var previousCategoryItems: [Item] {
         if previousCategory.isEmpty { return [] }
         let categoryFiltered = previousCategory == "All" ? items : items.filter { $0.category == previousCategory }
-        
-        if searchText.isEmpty {
-            return categoryFiltered
-        } else {
-            return categoryFiltered.filter {
-                $0.name.localizedCaseInsensitiveContains(searchText) ||
-                $0.brand.localizedCaseInsensitiveContains(searchText)
-            }
+        return searchText.isEmpty ? categoryFiltered : categoryFiltered.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.brand.localizedCaseInsensitiveContains(searchText)
         }
     }
     
@@ -126,9 +118,7 @@ struct ContentView: View {
                         isSearching: $isSearching,
                         text: $searchText,
                         viewMode: $viewMode,
-                        navigateToSettings: {
-                            path.append(.settings)
-                        }
+                        navigateToSettings: { path.append(.settings) }
                     )
                     
                     CategoryScrollView(
@@ -136,7 +126,6 @@ struct ContentView: View {
                         selectedCategory: $selectedCategory
                     )
                     
-                    // 傳送帶容器
                     ConveyorBeltContainer(
                         viewMode: viewMode,
                         currentItems: filteredItems,
@@ -147,9 +136,10 @@ struct ContentView: View {
                         items: $items,
                         saveItems: saveItems,
                         dragOffset: dragOffset,
-                        categoryTransition: categoryTransition
+                        categoryTransition: categoryTransition,
+                        verticalScrollDisabled: verticalScrollDisabled
                     )
-                    .gesture(createConveyorDragGesture())
+                    .simultaneousGesture(createConveyorDragGesture())
                 }
                 
                 FloatingAddMenu(
@@ -157,11 +147,9 @@ struct ContentView: View {
                     showCamera: $showCamera,
                     showImagePicker: $showImagePicker
                 )
-
             }
             .navigationDestination(for: NavigationTarget.self) { target in
-                switch target {
-                case .settings:
+                if case .settings = target {
                     SettingsView(categoryStore: categoryStore)
                 }
             }
@@ -173,14 +161,12 @@ struct ContentView: View {
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
-                    guard let img = selectedImage else { return }   // 取消就不處理
+                    guard let img = selectedImage else { return }
                     Task {
                         isRemovingBackground = true
-                        if let cut = await removeBackground(from: img) {
-                            selectedImage = cut
-                        }
+                        if let cut = await removeBackground(from: img) { selectedImage = cut }
                         isRemovingBackground = false
-                        isAddingNewItem = (selectedImage != nil)     // 完成後再開 AddItemView
+                        isAddingNewItem = (selectedImage != nil)
                     }
                 }
         }
@@ -190,20 +176,16 @@ struct ContentView: View {
                     guard let img = selectedImage else { return }
                     Task {
                         isRemovingBackground = true
-                        if let cut = await removeBackground(from: img) {
-                            selectedImage = cut
-                        }
+                        if let cut = await removeBackground(from: img) { selectedImage = cut }
                         isRemovingBackground = false
                         isAddingNewItem = (selectedImage != nil)
                     }
                 }
         }
-
         .sheet(item: $selectedItem) { item in
             ItemDetailView(item: item)
                 .presentationDetents([.fraction(0.7)])
                 .presentationCornerRadius(40)
-
         }
         .sheet(item: $editingItem) { editing in
             AddItemView(
@@ -216,7 +198,7 @@ struct ContentView: View {
                 if let index = items.firstIndex(where: { $0.id == editing.id }) {
                     items[index] = newItem
                 }
-                self.editingItem = nil
+                editingItem = nil
                 selectedImage = nil
                 saveItems()
             }
@@ -235,35 +217,48 @@ struct ContentView: View {
                 saveItems()
             }
         }
-        .onAppear {
-            loadItems()
-        }
+        .onAppear { loadItems() }
     }
     
-    // 傳送帶拖拽手勢
+    // 傳送帶拖拽手勢（方向鎖）
     private func createConveyorDragGesture() -> some Gesture {
-        DragGesture(minimumDistance: 10)
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
             .onChanged { gesture in
+                if panLock == .none {
+                    let dx = abs(gesture.translation.width)
+                    let dy = abs(gesture.translation.height)
+                    if dx > 10 || dy > 10 {
+                        panLock = dx >= dy ? .horizontal : .vertical
+                        verticalScrollDisabled = (panLock == .horizontal)
+                    }
+                }
+                guard panLock == .horizontal else {
+                    dragOffset = .zero
+                    categoryTransition = .none
+                    return
+                }
                 isDragging = true
-                dragOffset = gesture.translation
+                dragOffset = CGSize(width: gesture.translation.width, height: 0)
                 dragVelocity = gesture.velocity.width
-                
-                // 更新預覽的分類
                 updatePreviewCategories(for: gesture.translation.width)
             }
             .onEnded { gesture in
+                let wasHorizontal = (panLock == .horizontal)
+                panLock = .none
+                verticalScrollDisabled = false
                 isDragging = false
-                
+                guard wasHorizontal else {
+                    dragOffset = .zero
+                    categoryTransition = .none
+                    return
+                }
                 let swipeThreshold: CGFloat = UIScreen.main.bounds.width * 0.2
                 let velocityThreshold: CGFloat = 300
-                
                 let shouldSwipe = abs(gesture.translation.width) > swipeThreshold ||
-                                abs(gesture.velocity.width) > velocityThreshold
-                
-                if abs(gesture.translation.width) > abs(gesture.translation.height) && shouldSwipe {
+                                  abs(gesture.velocity.width) > velocityThreshold
+                if shouldSwipe && abs(gesture.translation.width) > abs(gesture.translation.height) {
                     performConveyorTransition(translationX: gesture.translation.width)
                 } else {
-                    // 回彈到原位
                     withAnimation(.easeOut(duration: 0.2)) {
                         dragOffset = .zero
                         categoryTransition = .none
@@ -272,15 +267,13 @@ struct ContentView: View {
             }
     }
     
-    // 更新預覽分類
     private func updatePreviewCategories(for translationX: CGFloat) {
         guard let currentIndex = categoryNames.firstIndex(of: selectedCategory) else { return }
-        
-        if translationX < -20 { // 向左滑動，顯示下一個分類
+        if translationX < -20 {
             let nextIndex = (currentIndex + 1) % categoryNames.count
             nextCategory = categoryNames[nextIndex]
             categoryTransition = .toNext
-        } else if translationX > 20 { // 向右滑動，顯示上一個分類
+        } else if translationX > 20 {
             let prevIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
             previousCategory = categoryNames[prevIndex]
             categoryTransition = .toPrevious
@@ -289,126 +282,79 @@ struct ContentView: View {
         }
     }
     
-    // 執行傳送帶轉場
     private func performConveyorTransition(translationX: CGFloat) {
         guard let currentIndex = categoryNames.firstIndex(of: selectedCategory) else { return }
-        
         let width = UIScreen.main.bounds.width
         let duration = 0.22
-        
+        let goingLeft = (translationX < 0)
         let targetCategory: String
         let transition: CategoryTransition
-        let goingLeft = (translationX < 0) // 往左滑 → 顯示下一個
-        
         if goingLeft {
-                let nextIndex = (currentIndex + 1) % categoryNames.count
-                targetCategory = categoryNames[nextIndex]
-                transition = .toNext
-            } else {
-                let prevIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
-                targetCategory = categoryNames[prevIndex]
-                transition = .toPrevious
-            }
-        
-        // 執行轉場動畫
+            let nextIndex = (currentIndex + 1) % categoryNames.count
+            targetCategory = categoryNames[nextIndex]
+            transition = .toNext
+        } else {
+            let prevIndex = (currentIndex - 1 + categoryNames.count) % categoryNames.count
+            targetCategory = categoryNames[prevIndex]
+            transition = .toPrevious
+        }
         categoryTransition = transition
-        
-        // 第 1 段：把「當前頁」滑出螢幕
         withAnimation(.easeInOut(duration: duration)) {
             dragOffset = CGSize(width: goingLeft ? -width : width, height: 0)
         }
-        
-        // 在第 1 段動畫結束後，切換資料 & 預置下一頁在另一側邊緣，再滑到 0
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            // 切換到目標分類
             selectedCategory = targetCategory
-            
-            // 清掉預覽狀態
             nextCategory = ""
             previousCategory = ""
-            
-            // 把新頁先擺在「另一側」邊緣，準備第 2 段滑入
             dragOffset = CGSize(width: goingLeft ? width : -width, height: 0)
-            
-            // 第 2 段：把新頁滑回中心
             withAnimation(.easeInOut(duration: duration)) {
                 dragOffset = .zero
             }
-            
-            // 完成後結束轉場狀態
             DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
                 categoryTransition = .none
             }
         }
-        
-        // 觸覺反饋
-        let impactGenerator = UIImpactFeedbackGenerator(style: .light)
-        impactGenerator.impactOccurred()
-    }
-    
-    private func triggerHapticFeedback() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
     
     private func saveItems() {
-        do {
-            let data = try JSONEncoder().encode(items)
-            try data.write(to: savePath)
-        } catch {
-            print("儲存失敗：\(error)")
+        if let data = try? JSONEncoder().encode(items) {
+            try? data.write(to: savePath)
         }
     }
     
     private func loadItems() {
-        do {
-            let data = try Data(contentsOf: savePath)
-            items = try JSONDecoder().decode([Item].self, from: data)
-        } catch {
-            print("讀取失敗或尚無資料：\(error)")
+        if let data = try? Data(contentsOf: savePath),
+           let decoded = try? JSONDecoder().decode([Item].self, from: data) {
+            items = decoded
         }
     }
     
     @MainActor
     func removeBackground(from image: UIImage) async -> UIImage? {
         guard let ciImage = CIImage(image: image) else { return nil }
-
-        // Vision 產生前景遮罩（iOS 17+）
         let request = VNGenerateForegroundInstanceMaskRequest()
         let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
-
         do {
             try handler.perform([request])
             guard let obs = request.results?.first as? VNInstanceMaskObservation else { return nil }
-
-            let maskBuffer = try obs.generateScaledMaskForImage(
-                forInstances: obs.allInstances,
-                from: handler
-            )
-            let maskCI  = CIImage(cvPixelBuffer: maskBuffer)
-            let extent  = ciImage.extent
+            let maskBuffer = try obs.generateScaledMaskForImage(forInstances: obs.allInstances, from: handler)
+            let maskCI = CIImage(cvPixelBuffer: maskBuffer)
+            let extent = ciImage.extent
             let clearBG = CIImage(color: .clear).cropped(to: extent)
-
-            // 用遮罩把背景清空（保持透明）
             let cut = CIFilter.blendWithMask()
-            cut.inputImage      = ciImage
-            cut.maskImage       = maskCI
+            cut.inputImage = ciImage
+            cut.maskImage = maskCI
             cut.backgroundImage = clearBG
-
             guard let output = cut.outputImage else { return nil }
             let ctx = CIContext()
             guard let cg = ctx.createCGImage(output, from: output.extent) else { return nil }
-
-            // 保留原圖的 scale & orientation
             return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
         } catch {
-            print("removeBackground error: \(error)")
             return nil
         }
     }
-
 }
-
 // 傳送帶容器視圖
 struct ConveyorBeltContainer: View {
     let viewMode: ViewMode
@@ -421,40 +367,36 @@ struct ConveyorBeltContainer: View {
     let saveItems: () -> Void
     let dragOffset: CGSize
     let categoryTransition: ContentView.CategoryTransition
+    let verticalScrollDisabled: Bool
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // 當前內容
-                Group {
-                    if viewMode == .grid {
-                        ItemsGridView(
-                            filteredItems: currentItems,
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems
-                        )
-                    } else {
-                        ItemsListView(
-                            filteredItems: currentItems,
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems
-                        )
-                    }
+                if viewMode == .grid {
+                    ItemsGridView(
+                        filteredItems: currentItems,
+                        selectedItem: $selectedItem,
+                        editingItem: $editingItem,
+                        items: $items,
+                        saveItems: saveItems,
+                        isScrollDisabled: verticalScrollDisabled
+                    )
+                } else {
+                    ItemsListView(
+                        filteredItems: currentItems,
+                        selectedItem: $selectedItem,
+                        editingItem: $editingItem,
+                        items: $items,
+                        saveItems: saveItems,
+                        isScrollDisabled: verticalScrollDisabled
+                    )
                 }
-                .offset(x: dragOffset.width)
-                
-              
-                
             }
+            .offset(x: dragOffset.width)
         }
-        .clipped() // 確保溢出的內容被裁剪
+        .clipped()
     }
 }
-
 
 struct HeaderView: View {
     @Binding var isSearching: Bool
@@ -549,6 +491,7 @@ struct ItemsListView: View {
     @Binding var editingItem: Item?
     @Binding var items: [Item]
     let saveItems: () -> Void
+    let isScrollDisabled: Bool
     
     var body: some View {
         ScrollView {
@@ -569,6 +512,7 @@ struct ItemsListView: View {
                 .padding(.horizontal)
             }
         }
+        .scrollDisabled(isScrollDisabled)
         .padding(.top, 16)
     }
 }
@@ -714,6 +658,7 @@ struct ItemsGridView: View {
     @Binding var editingItem: Item?
     @Binding var items: [Item]
     let saveItems: () -> Void
+    let isScrollDisabled: Bool
     
     var body: some View {
         ScrollView {
@@ -734,6 +679,7 @@ struct ItemsGridView: View {
                 .padding()
             }
         }
+        .scrollDisabled(isScrollDisabled)
     }
 }
 
