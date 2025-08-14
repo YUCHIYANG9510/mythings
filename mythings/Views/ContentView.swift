@@ -285,8 +285,9 @@ struct ContentView: View {
     private func performConveyorTransition(translationX: CGFloat) {
         guard let currentIndex = categoryNames.firstIndex(of: selectedCategory) else { return }
         let width = UIScreen.main.bounds.width
-        let duration = 0.22
+        let duration = 0.20
         let goingLeft = (translationX < 0)
+        
         let targetCategory: String
         let transition: CategoryTransition
         if goingLeft {
@@ -298,25 +299,41 @@ struct ContentView: View {
             targetCategory = categoryNames[prevIndex]
             transition = .toPrevious
         }
+        
         categoryTransition = transition
-        withAnimation(.easeInOut(duration: duration)) {
-            dragOffset = CGSize(width: goingLeft ? -width : width, height: 0)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            selectedCategory = targetCategory
-            nextCategory = ""
-            previousCategory = ""
-            dragOffset = CGSize(width: goingLeft ? width : -width, height: 0)
+        
+        // 第一段：當前頁滑出（同時因為容器會渲染進場頁，所以不會空白）
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            // 進入第二段前：切資料 & 把新頁「瞬移」到另一側邊緣（不帶動畫）
+            var tx = Transaction()
+            tx.disablesAnimations = true
+            withTransaction(tx) {
+                selectedCategory = targetCategory
+                nextCategory = ""
+                previousCategory = ""
+                dragOffset = CGSize(width: goingLeft ? width : -width, height: 0)
+            }
+            
+            // 第二段：新頁從邊緣滑到中心
+            CATransaction.begin()
+            CATransaction.setCompletionBlock {
+                // 動畫完成後結束轉場狀態
+                categoryTransition = .none
+            }
             withAnimation(.easeInOut(duration: duration)) {
                 dragOffset = .zero
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-                categoryTransition = .none
-            }
+            CATransaction.commit()
         }
+        withAnimation(.easeInOut(duration: duration)) {
+            dragOffset = CGSize(width: goingLeft ? -width : width, height: 0)
+        }
+        CATransaction.commit()
+        
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     private func saveItems() {
         if let data = try? JSONEncoder().encode(items) {
             try? data.write(to: savePath)
@@ -369,31 +386,39 @@ struct ConveyorBeltContainer: View {
     let categoryTransition: ContentView.CategoryTransition
     let verticalScrollDisabled: Bool
     
+    @ViewBuilder
+        private func content(for items: [Item]) -> some View {
+            if viewMode == .grid {
+                ItemsGridView(
+                    filteredItems: items,
+                    selectedItem: $selectedItem,
+                    editingItem: $editingItem,
+                    items: $items,
+                    saveItems: saveItems,
+                    isScrollDisabled: verticalScrollDisabled
+                )
+            } else {
+                ItemsListView(
+                    filteredItems: items,
+                    selectedItem: $selectedItem,
+                    editingItem: $editingItem,
+                    items: $items,
+                    saveItems: saveItems,
+                    isScrollDisabled: verticalScrollDisabled
+                )
+            }
+        }
+    
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                if viewMode == .grid {
-                    ItemsGridView(
-                        filteredItems: currentItems,
-                        selectedItem: $selectedItem,
-                        editingItem: $editingItem,
-                        items: $items,
-                        saveItems: saveItems,
-                        isScrollDisabled: verticalScrollDisabled
-                    )
-                } else {
-                    ItemsListView(
-                        filteredItems: currentItems,
-                        selectedItem: $selectedItem,
-                        editingItem: $editingItem,
-                        items: $items,
-                        saveItems: saveItems,
-                        isScrollDisabled: verticalScrollDisabled
-                    )
+            GeometryReader { geometry in
+                ZStack {
+                    // 當前內容（跟著拖曳位移）
+                    content(for: currentItems)
+                        .offset(x: dragOffset.width)
+                    
+                   
                 }
             }
-            .offset(x: dragOffset.width)
-        }
         .clipped()
     }
 }
