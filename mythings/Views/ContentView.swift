@@ -22,13 +22,27 @@ enum ViewMode {
     case list
 }
 
+
+extension View {
+    /// iOS 17 之後的 onChange 使用 0 或 2 參數；iOS 16 仍是舊版 1 參數。
+    @ViewBuilder
+    func onChangeCompat<V: Equatable>(of value: V, perform action: @escaping () -> Void) -> some View {
+        if #available(iOS 17, *) {
+            self.onChange(of: value) {
+                action()       // 新：零參數 closure 版本
+            }
+        } else {
+            self.onChange(of: value, perform: { _ in
+                action()       // 舊：一參數（newValue）版本
+            })
+        }
+    }
+}
+
 class ImageCacheManager: ObservableObject {
     static let shared = ImageCacheManager()
     @Published var cacheInvalidationTrigger = UUID()
-    
-    func invalidateCache() {
-        cacheInvalidationTrigger = UUID()
-    }
+    func invalidateCache() { cacheInvalidationTrigger = UUID() }
 }
 
 struct ContentView: View {
@@ -49,31 +63,19 @@ struct ContentView: View {
     @ObservedObject var categoryStore: CategoryStore
     @StateObject private var brandStore = BrandStore()
     @State private var isRemovingBackground = false
-    // 拖曳時預熱 Core Haptics
     @State private var didPrepareHaptic = false
-    // 根據滑動速度估算的力度（0.5~1.0）
     @State private var lastSwipeStrength: Double = 0.75
 
-    
-    // 🔹 用於原生分頁的索引，會與 selectedCategory 互相同步
     @State private var selectedPage: Int = 0
     
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
-    
-    // Haptic：選擇型回饋（適合分頁、選項切換）
     private let selectionHaptic = UISelectionFeedbackGenerator()
-   
-
 
     var categoryNames: [String] {
-        var names = ["All"]
-        names.append(contentsOf: categoryStore.categories.map { $0.name })
-        return names
+        var names = ["All"]; names.append(contentsOf: categoryStore.categories.map { $0.name }); return names
     }
-    
-    // 依分類與搜尋字過濾
     private func itemsFor(category: String) -> [Item] {
         let categoryFiltered = (category == "All") ? items : items.filter { $0.category == category }
         guard !searchText.isEmpty else { return categoryFiltered }
@@ -82,7 +84,7 @@ struct ContentView: View {
             $0.brand.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
@@ -93,13 +95,10 @@ struct ContentView: View {
                         viewMode: $viewMode,
                         navigateToSettings: { path.append(.settings) }
                     )
-                    
                     CategoryScrollView(
                         categoryNames: categoryNames,
                         selectedCategory: $selectedCategory
                     )
-                    
-                    // ✅ 原生分頁：左右滑動超順
                     CategoryPager(
                         categoryNames: categoryNames,
                         selectedPage: $selectedPage,
@@ -116,7 +115,6 @@ struct ContentView: View {
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 6, coordinateSpace: .local)
                             .onChanged { value in
-                                // 偵測明顯水平拖曳 → 預熱一次 Haptics
                                 if !didPrepareHaptic,
                                    abs(value.translation.width) > abs(value.translation.height),
                                    abs(value.translation.width) > 8 {
@@ -125,15 +123,13 @@ struct ContentView: View {
                                 }
                             }
                             .onEnded { value in
-                                // 估算「速度」→ 轉成強度（0.5~1.0）
                                 let dx = value.predictedEndTranslation.width - value.translation.width
-                                let approxSpeed = min(1.0, max(0.0, Double(abs(dx) / 140.0))) // 140 可微調
+                                let approxSpeed = min(1.0, max(0.0, Double(abs(dx) / 140.0)))
                                 lastSwipeStrength = 0.5 + 0.5 * approxSpeed
                                 didPrepareHaptic = false
                             }
                     )
                 }
-                
                 FloatingAddMenu(
                     isOpen: $showActionSheet,
                     showCamera: $showCamera,
@@ -142,15 +138,12 @@ struct ContentView: View {
             }
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
-                case .settings:
-                    SettingsView(categoryStore: categoryStore)
+                case .settings: SettingsView(categoryStore: categoryStore)
                 }
             }
         }
         .accentColor(.primary)
-        .sheet(isPresented: $showManageCategories) {
-            ManageCategoriesView(categoryStore: categoryStore)
-        }
+        .sheet(isPresented: $showManageCategories) { ManageCategoriesView(categoryStore: categoryStore) }
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
@@ -188,9 +181,7 @@ struct ContentView: View {
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                if let index = items.firstIndex(where: { $0.id == editing.id }) {
-                    items[index] = newItem
-                }
+                if let idx = items.firstIndex(where: { $0.id == editing.id }) { items[idx] = newItem }
                 editingItem = nil
                 selectedImage = nil
                 saveItems()
@@ -212,15 +203,11 @@ struct ContentView: View {
         }
         .onAppear {
             loadItems()
-            if let idx = categoryNames.firstIndex(of: selectedCategory) {
-                selectedPage = idx
-            }
+            if let idx = categoryNames.firstIndex(of: selectedCategory) { selectedPage = idx }
         }
         .onChange(of: selectedPage) { _, newValue in
             if categoryNames.indices.contains(newValue) {
-                // ✅ 分頁 settle 的瞬間：用 Core Haptics 播放更沉的觸感
                 HapticsManager.shared.pageSnap(strength: lastSwipeStrength)
-
                 let cat = categoryNames[newValue]
                 if cat != selectedCategory { selectedCategory = cat }
             }
@@ -244,7 +231,20 @@ struct ContentView: View {
     private func loadItems() {
         do {
             let data = try Data(contentsOf: savePath)
-            items = try JSONDecoder().decode([Item].self, from: data)
+            var decoded = try JSONDecoder().decode([Item].self, from: data)
+            // ✅ 讀取舊資料後，規一化價錢，避免舊資料有 "$$"
+            decoded = decoded.map { item in
+                Item(
+                    id: item.id,
+                    imageName: item.imageName,
+                    brand: item.brand,
+                    category: item.category,
+                    name: item.name,
+                    price: normalizedPriceString(item.price)
+                )
+            }
+
+            items = decoded
         } catch {
             print("讀取失敗或尚無資料：\(error)")
         }
@@ -339,13 +339,10 @@ struct CategoryPager: View {
                 selectedPage = idx
             }
         }
-
         .background(TabViewScrollConfigurator())
     }
 }
 
-
-/// 微調 TabView(.page) 的 UIScrollView 手感（可依喜好調整）
 private struct TabViewScrollConfigurator: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let v = UIView()
@@ -363,14 +360,15 @@ private struct TabViewScrollConfigurator: UIViewRepresentable {
                 scroll.showsHorizontalScrollIndicator = false
                 scroll.showsVerticalScrollIndicator = false
                 scroll.alwaysBounceVertical = false
-                scroll.bounces = true              // 若喜歡邊緣彈性可改 true
-                scroll.decelerationRate = .fast     // 更俐落
+                scroll.bounces = true
+                scroll.decelerationRate = .fast
                 break
             }
             p = cur.superview
         }
     }
 }
+
 struct HeaderView: View {
     @Binding var isSearching: Bool
     @Binding var text: String
@@ -387,13 +385,9 @@ struct HeaderView: View {
                             .textFieldStyle(PlainTextFieldStyle())
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
-                        
                         if !text.isEmpty {
-                            Button(action: {
-                                text = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.gray)
+                            Button(action: { text = "" }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.gray)
                             }
                         }
                     }
@@ -401,62 +395,32 @@ struct HeaderView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
                     
-                    
                     Button("Cancel") {
-                        withAnimation {
-                            isSearching = false
-                            text = ""
-                        }
+                        withAnimation { isSearching = false; text = "" }
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     }
                 }
                 .padding(.horizontal)
-                
             } else {
-                Button(action: {
-                    navigateToSettings()
-                }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.title2)
-                        .padding(.leading)
-                        .foregroundColor(.primary)
+                Button(action: { navigateToSettings() }) {
+                    Image(systemName: "gearshape.fill").font(.title2).padding(.leading).foregroundColor(.primary)
                 }
-                
                 Spacer()
-                
-                Text("My Things")
-                    .font(.title3)
-                    .bold()
-                
+                Text("My Things").font(.title3).bold()
                 Spacer()
-                
-                Button(action: {
-                    withAnimation {
-                        viewMode = viewMode == .grid ? .list : .grid
-                    }
-                }) {
+                Button(action: { withAnimation { viewMode = viewMode == .grid ? .list : .grid } }) {
                     Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
-                        .font(.title2)
-                        .foregroundColor(.primary)
+                        .font(.title2).foregroundColor(.primary)
                 }
                 .padding(.trailing, 8)
-                
-                Button(action: {
-                    withAnimation {
-                        isSearching = true
-                    }
-                }) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.title2)
-                        .padding(.trailing)
-                        .foregroundColor(.primary)
+                Button(action: { withAnimation { isSearching = true } }) {
+                    Image(systemName: "magnifyingglass").font(.title2).padding(.trailing).foregroundColor(.primary)
                 }
             }
         }
         .padding(.vertical)
     }
 }
-
 
 struct ItemsListView: View {
     let filteredItems: [Item]
@@ -500,54 +464,31 @@ struct ListItemCell: View {
         HStack(alignment: .center, spacing: 12) {
             ListItemImageView(imageName: item.imageName)
                 .frame(width: 80, height: 80)
-            
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(item.brand) · \(item.category)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                
+                    .font(.caption).foregroundColor(.gray)
                 Text(item.name)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                    .font(.subheadline).fontWeight(.medium)
                     .lineLimit(1)
             }
-            
             Spacer()
-
-            if let price = Double(item.price) {
-                Text("$\(formattedPrice(price))")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            } else {
-                Text("$\(item.price)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            }
-            
+            // ✅ 統一顯示價錢
+            Text(item.displayPrice)
+                .font(.subheadline)
+                .foregroundColor(.gray)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
         .background(Color(.systemGray6))
         .cornerRadius(8)
-        .onTapGesture {
-            selectedItem = item
-        }
+        .onTapGesture { selectedItem = item }
         .contextMenu {
-            Button("編輯") {
-                editingItem = item
-            }
+            Button("編輯") { editingItem = item }
             Button("刪除", role: .destructive) {
                 items.removeAll { $0.id == item.id }
                 saveItems()
             }
         }
-    }
-    
-    private func formattedPrice(_ price: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
     }
 }
 
@@ -555,39 +496,28 @@ struct ListItemImageView: View {
     let imageName: String
     @StateObject private var cacheManager = ImageCacheManager.shared
     @State private var image: UIImage?
-    
     var body: some View {
         Group {
             if let image = image {
                 ZStack {
                     Color(.systemGray6)
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                       
+                    Image(uiImage: image).resizable().scaledToFit()
                 }
                 .frame(width: 80, height: 80)
             } else {
                 ZStack {
                     Color(.systemGray6)
                     Image(systemName: "photo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 30)
-                        .foregroundColor(.gray)
+                        .resizable().scaledToFit()
+                        .frame(width: 30).foregroundColor(.gray)
                 }
                 .frame(width: 80, height: 80)
             }
         }
         .onAppear(perform: loadImage)
-        .onChange(of: cacheManager.cacheInvalidationTrigger) {
-            loadImage()
-        }
-        .onChange(of: imageName) {
-            loadImage()
-        }
+        .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
+        .onChangeCompat(of: imageName) { loadImage() }
     }
-    
     private func loadImage() {
         let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
         image = UIImage(contentsOfFile: imagePath)
@@ -597,24 +527,17 @@ struct ListItemImageView: View {
 struct CategoryScrollView: View {
     let categoryNames: [String]
     @Binding var selectedCategory: String
-    
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(categoryNames, id: \.self) { category in
-                    Button(action: {
-                        selectedCategory = category
-                    }) {
+                    Button(action: { selectedCategory = category }) {
                         Text(category)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .font(.caption)
-                            .background(
-                                selectedCategory == category ? Color.primary : Color.gray.opacity(0.2)
-                            )
-                            .foregroundColor(
-                                selectedCategory == category ? Color.textcolor : Color.primary
-                            )
+                            .background(selectedCategory == category ? Color.primary : Color.gray.opacity(0.2))
+                            .foregroundColor(selectedCategory == category ? Color.textcolor : Color.primary)
                             .clipShape(Capsule())
                     }
                 }
@@ -631,7 +554,6 @@ struct ItemsGridView: View {
     @Binding var items: [Item]
     let saveItems: () -> Void
     var isScrollDisabled: Bool = false
-    
     var body: some View {
         ScrollView {
             if filteredItems.isEmpty {
@@ -658,13 +580,8 @@ struct ItemsGridView: View {
 struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "tray")
-                .resizable()
-                .frame(width: 40, height: 30)
-                .foregroundColor(.gray)
-            Text("It's empty here...")
-                .foregroundColor(.gray)
-                .font(.subheadline)
+            Image(systemName: "tray").resizable().frame(width: 40, height: 30).foregroundColor(.gray)
+            Text("It's empty here...").foregroundColor(.gray).font(.subheadline)
         }
         .padding(.top, 250)
     }
@@ -680,49 +597,28 @@ struct ItemCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ItemImageView(imageName: item.imageName)
-            
             Text("\(item.brand) · \(item.category)")
-                .font(.caption)
-                .foregroundColor(.gray)
-            
+                .font(.caption).foregroundColor(.gray)
             HStack {
-                Text(item.name)
-                    .font(.subheadline)
-                    .lineLimit(1)
+                Text(item.name).font(.subheadline).lineLimit(1)
                 Spacer()
-                if let price = Double(item.price) {
-                    Text("$\(formattedPrice(price))")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                } else {
-                    Text("$\(item.price)")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                }
+                // ✅ 統一顯示價錢
+                Text(item.displayPrice)
+                    .font(.caption2)
+                    .foregroundColor(.gray)
             }
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
-        .onTapGesture {
-            selectedItem = item
-        }
+        .onTapGesture { selectedItem = item }
         .contextMenu {
-            Button("編輯") {
-                editingItem = item
-            }
+            Button("編輯") { editingItem = item }
             Button("刪除", role: .destructive) {
                 items.removeAll { $0.id == item.id }
                 saveItems()
             }
         }
-    }
-    
-    private func formattedPrice(_ price: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
     }
 }
 
@@ -730,49 +626,31 @@ struct ItemImageView: View {
     let imageName: String
     @StateObject private var cacheManager = ImageCacheManager.shared
     @State private var image: UIImage?
-    
     var body: some View {
         Group {
             if let image = image {
                 ZStack {
                     Color(.systemGray6)
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 120)
+                    Image(uiImage: image).resizable().scaledToFit().frame(height: 120)
                 }
-                .frame(height: 150)
-                .cornerRadius(8)
+                .frame(height: 150).cornerRadius(8)
             } else {
                 ZStack {
                     Color(.systemGray6)
-                    Image(systemName: "photo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 60)
-                        .foregroundColor(.gray)
+                    Image(systemName: "photo").resizable().scaledToFit().frame(height: 60).foregroundColor(.gray)
                 }
-                .frame(height: 150)
-                .cornerRadius(8)
+                .frame(height: 150).cornerRadius(8)
             }
         }
         .onAppear(perform: loadImage)
-        .onChange(of: cacheManager.cacheInvalidationTrigger) {
-            loadImage()
-        }
-        .onChange(of: imageName) {
-            loadImage()
-        }
+        .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
+        .onChangeCompat(of: imageName) { loadImage() }
     }
-    
     private func loadImage() {
         let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
         image = UIImage(contentsOfFile: imagePath)
     }
 }
-
-
-
 
 struct FloatingAddMenu: View {
     @Binding var isOpen: Bool
@@ -790,35 +668,17 @@ struct FloatingAddMenu: View {
                     .transition(.opacity)
                     .onTapGesture { toggle(false) }
             }
-
             VStack {
                 Spacer()
-                
                 HStack {
                     VStack(spacing: 16) {
-                        // 展開的選單按鈕
                         if isOpen {
                             HStack(spacing: 12) {
-                                // 第一個按鈕 - 相簿
-                                CircularIconButton(
-                                    system: "photo.on.rectangle",
-                                    label: "相簿",
-                                    isVisible: showFirstButton
-                                ) {
-                                    toggle(false)
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    showImagePicker = true
+                                CircularIconButton(system: "photo.on.rectangle", label: "相簿", isVisible: showFirstButton) {
+                                    toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showImagePicker = true
                                 }
-                                
-                                // 第二個按鈕 - 拍照
-                                CircularIconButton(
-                                    system: "camera.fill",
-                                    label: "拍照",
-                                    isVisible: showSecondButton
-                                ) {
-                                    toggle(false)
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    showCamera = true
+                                CircularIconButton(system: "camera.fill", label: "拍照", isVisible: showSecondButton) {
+                                    toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showCamera = true
                                 }
                             }
                             .transition(.asymmetric(
@@ -826,8 +686,6 @@ struct FloatingAddMenu: View {
                                 removal: .move(edge: .bottom).combined(with: .opacity)
                             ))
                         }
-                        
-                        // 主 FAB
                         Button {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             toggle(!isOpen)
@@ -839,43 +697,27 @@ struct FloatingAddMenu: View {
                                 .background(colorScheme == .dark ? Color.white : Color.black)
                                 .clipShape(Circle())
                                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                                .scaleEffect(isOpen ? 0.9 : 1.0) // 點擊時微縮
-                                .rotationEffect(.degrees(isOpen ? 45 : 0)) // 加號旋轉45度變成 X 形狀
+                                .scaleEffect(isOpen ? 0.9 : 1.0)
+                                .rotationEffect(.degrees(isOpen ? 45 : 0))
                         }
                     }
                     .frame(width: 60)
-                    .frame(width: 60)
                 }
-                
-                Spacer()
-                    .frame(height: 30)
+                Spacer().frame(height: 30)
             }
         }
         .onChange(of: isOpen) { _, newValue in
             if newValue {
-                // 展開時的錯開動畫
-                showFirstButton = false
-                showSecondButton = false
-                
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1)) {
-                    showFirstButton = true
-                }
-                
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.2)) {
-                    showSecondButton = true
-                }
+                showFirstButton = false; showSecondButton = false
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.1)) { showFirstButton = true }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7).delay(0.2)) { showSecondButton = true }
             } else {
-                // 收起時同時隱藏
-                showFirstButton = false
-                showSecondButton = false
+                showFirstButton = false; showSecondButton = false
             }
         }
     }
-
     private func toggle(_ open: Bool) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-            isOpen = open
-        }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isOpen = open }
     }
 }
 
@@ -886,7 +728,6 @@ private struct CircularIconButton: View {
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var isPressed = false
-
     var body: some View {
         Button(action: action) {
             Image(systemName: system)
@@ -908,10 +749,6 @@ private struct CircularIconButton: View {
         }, perform: {})
     }
 }
-
-
-
-
 
 #Preview {
     ContentView(categoryStore: CategoryStore())

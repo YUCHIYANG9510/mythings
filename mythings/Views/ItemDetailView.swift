@@ -26,48 +26,21 @@ struct ItemDetailView: View {
             Text(item.name)
                 .font(.title2)
                 .padding(.vertical)
-           Text("\(item.brand) · \(item.category)")
+            Text("\(item.brand) · \(item.category)")
                 .foregroundColor(.gray)
                 .padding(.bottom, 4)
-            /*  HStack{
-                Text("\(item.brand) ·")
-                Text("\(item.category)")
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .font(.caption)
-                    .background(Color.primary)
-                    .foregroundColor(Color.accentColor)
-                    .clipShape(Capsule())
-            }*/
-            .padding(.bottom, 4)
-            if let price = Double(item.price) {
-                Text("$\(formattedPrice(price))")
-                    .font(.callout)
-            } else {
-                Text("$\(item.price)")
-                    .font(.callout)
-            }
+            // ✅ 統一顯示價錢
+            Text(item.displayPrice)
+                .font(.callout)
         }
         .padding()
-        .onTapGesture {
-            dismiss()
-        }
+        .onTapGesture { dismiss() }
         .onAppear(perform: loadImage)
-        .onChange(of: cacheManager.cacheInvalidationTrigger) {
-                    loadImage()
-                }
-    }
-    
-    private func formattedPrice(_ price: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: price)) ?? "\(price)"
+        .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
     }
     
     private func loadImage() {
-            let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
-            image = UIImage(contentsOfFile: imagePath)
-        }
+        let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
+        image = UIImage(contentsOfFile: imagePath)
     }
-
+}
