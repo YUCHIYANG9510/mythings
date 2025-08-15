@@ -325,44 +325,102 @@ private extension AddItemView {
     }
 }
 
-// MARK: - Brand Chips
+// MARK: - Brand Chips（換行 + 新增/刪除；選取以黑色框線高亮）
 @available(iOS 16.0, *)
 private struct BrandChipsView: View {
     @ObservedObject var brandStore: BrandStore
     @Binding var selectedBrand: String
     @Environment(\.colorScheme) var colorScheme
 
+    // Add Tag 的顏色（可改成你的品牌色）
+    private let addColor: Color = .primary
+
     var body: some View {
         FlowLayout(spacing: 8, runSpacing: 8) {
             ForEach(brandStore.brands, id: \.self) { b in
-                Button { selectedBrand = b } label: {
-                    Text(b)
-                        .font(.subheadline)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(colorScheme == .dark ? 0.25 : 0.18))
-                        .clipShape(Capsule())
-                        .foregroundColor(colorScheme == .dark ? .white : .black)
-                }
+                RemovableChip(
+                    title: b,
+                    isSelected: selectedBrand == b,
+                    colorScheme: colorScheme,
+                    onSelect: { selectedBrand = b },
+                    onRemove: {
+                        if let idx = brandStore.brands.firstIndex(of: b) {
+                            brandStore.brands.remove(at: idx)
+                            if selectedBrand == b { selectedBrand = "" }
+                        }
+                    }
+                )
             }
-            Button {
-                let trimmed = selectedBrand.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                if !brandStore.brands.contains(trimmed) {
-                    brandStore.brands.append(trimmed)
+
+            // Add Tag 也作為 chip，會跟著換行
+            Button(action: addTag) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus")
+                    Text("Add Tag")
                 }
-            } label: {
-                Text("+ Add Tag")
-                    .font(.subheadline)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.primary)
-                    .foregroundColor(Color(UIColor.systemBackground))
-                    .clipShape(Capsule())
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(addColor)
+                .foregroundColor(Color(UIColor.systemBackground))
+                .clipShape(Capsule())
+                .shadow(radius: 1, y: 1)
             }
+            .buttonStyle(.plain)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: brandStore.brands)
+    }
+
+    private func addTag() {
+        let trimmed = selectedBrand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let exists = brandStore.brands.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        guard !exists else { return }
+        brandStore.brands.append(trimmed)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        selectedBrand = "" // 新增後清空輸入：要保留原文字就刪掉這行
     }
 }
+
+// 一顆可刪除的 chip（選取時用黑色框線高亮）
+private struct RemovableChip: View {
+    let title: String
+    let isSelected: Bool
+    let colorScheme: ColorScheme
+    let onSelect: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onSelect) {
+                Text(title)
+                    .font(.subheadline)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .accessibilityLabel("Remove \(title)")
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(colorScheme == .dark ? 0.25 : 0.18))
+        .foregroundColor(colorScheme == .dark ? .white : .black)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(isSelected ? Color.black : Color.clear, lineWidth: 2) // 🔥選取時黑色框線
+        )
+    }
+}
+
+
 
 // MARK: - Reusable labeled text field
 private struct LabeledTextField: View {
