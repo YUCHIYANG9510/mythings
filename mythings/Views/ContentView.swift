@@ -168,10 +168,20 @@ struct ContentView: View {
                 }
         }
         .sheet(item: $selectedItem) { item in
-            ItemDetailView(item: item)
-                .presentationDetents([.fraction(0.7)])
-                .presentationCornerRadius(40)
+            ItemDetailView(
+                item: item,
+                categoryStore: categoryStore,
+                brandStore: brandStore
+            ) { updated in
+                if let idx = items.firstIndex(where: { $0.id == updated.id }) {
+                    items[idx] = updated
+                    saveItems()
+                }
+            }
+            .presentationDetents([.fraction(0.7)])
+            .presentationCornerRadius(40)
         }
+
         .sheet(item: $editingItem) { editing in
             AddItemView(
                 selectedImage: $selectedImage,
@@ -239,7 +249,8 @@ struct ContentView: View {
                     brand: item.brand,
                     category: item.category,
                     name: item.name,
-                    price: normalizedPriceString(item.price)
+                    price: normalizedPriceString(item.price),
+                    date: item.date
                 )
             }
 

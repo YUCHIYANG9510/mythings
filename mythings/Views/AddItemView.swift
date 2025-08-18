@@ -279,14 +279,20 @@ private extension AddItemView {
             brand = item.brand
             category = item.category
             price = item.price.replacingOccurrences(of: "$", with: "")
-            if let image = UIImage(
-                contentsOfFile: FileManager.documentsDirectory
-                    .appendingPathComponent(item.imageName).path
-            ) {
+            if let image = UIImage(contentsOfFile: FileManager.documentsDirectory
+                .appendingPathComponent(item.imageName).path) {
                 selectedImage = image
+            }
+            // ✅ 日期：有存就打開 toggle 並顯示
+            if let d = item.date {
+                useDate = true
+                selectedDate = d
+            } else {
+                useDate = false
             }
         } else if !categoryStore.categories.isEmpty {
             category = categoryStore.categories[0].name
+            useDate = false
         }
     }
 
@@ -307,7 +313,7 @@ private extension AddItemView {
 
     func saveTapped() {
         if isFormValid() {
-            guard let selectedImage else { return } // 沒有圖不存
+            guard let selectedImage else { return }
             let fileName = existingItem?.imageName ?? UUID().uuidString + ".png"
             let fileURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
             if let data = selectedImage.pngData() { try? data.write(to: fileURL) }
@@ -318,10 +324,10 @@ private extension AddItemView {
                 brand: brand,
                 category: category,
                 name: name,
-                price: priceWithDollar(price)
+                price: priceWithDollar(price),
+                date: useDate ? selectedDate : nil     // ✅ 寫入日期（或 nil）
             )
             ImageCacheManager.shared.invalidateCache()
-            // TODO: 若之後要存日期，請在 Item 加欄位並一併寫入
             onComplete(item)
         } else {
             showValidationAlert = true
@@ -391,7 +397,6 @@ private struct BrandChipsView: View {
         guard !exists else { return }
         brandStore.brands.append(trimmed)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        selectedBrand = "" // 新增後清空輸入：要保留原文字就刪掉這行
     }
 }
 
