@@ -102,6 +102,7 @@ struct AddItemView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -181,9 +182,9 @@ private extension AddItemView {
 
     @ViewBuilder
     var brandSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Brand").font(.footnote).foregroundColor(.secondary)
-            TextField("Name", text: $brand)
+            TextField("Brand Name", text: $brand)
                 .textInputAutocapitalization(.words)
                 .padding(.horizontal, 14)
                 .frame(height: 48)
@@ -238,21 +239,31 @@ private extension AddItemView {
                         HStack {
                             Text(categoryEmoji(for: c.name))
                             Text(c.name)
-                            if c.name == category { Spacer(); Image(systemName: "checkmark") }
+                                .foregroundColor(.primary)
+                            if c.name == category {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .navigationTitle("Select Category")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { showCategorySheet = false }
+                        .tint(.blue)
+                        .fontWeight(.semibold)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Manage") {
                         showCategorySheet = false
                         showManageCategories = true
                     }
+                    .tint(.blue)
+                    .fontWeight(.semibold)
                 }
             }
         }

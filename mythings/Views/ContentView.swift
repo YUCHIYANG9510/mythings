@@ -142,7 +142,6 @@ struct ContentView: View {
                 }
             }
         }
-        .accentColor(.primary)
         .sheet(isPresented: $showManageCategories) { ManageCategoriesView(categoryStore: categoryStore) }
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)

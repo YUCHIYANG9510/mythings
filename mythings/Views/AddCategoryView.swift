@@ -38,7 +38,7 @@ struct AddCategoryView: View {
                             dismiss()
                         }
                     }
-                    .foregroundColor(.blue)
+                    .tint(.blue)
 
                 }
             }
