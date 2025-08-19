@@ -251,22 +251,7 @@ private extension AddItemView {
                     .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Select Category")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { showCategorySheet = false }
-                        .tint(.blue)
-                        .fontWeight(.semibold)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Manage") {
-                        showCategorySheet = false
-                        showManageCategories = true
-                    }
-                    .tint(.blue)
-                    .fontWeight(.semibold)
-                }
-            }
+            
         }
         .presentationDetents([.medium, .large])
     }
