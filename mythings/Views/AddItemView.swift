@@ -209,6 +209,7 @@ private extension AddItemView {
             if useDate {
                 DatePicker("Select Date", selection: $selectedDate, displayedComponents: [.date])
                     .datePickerStyle(.graphical)
+                    .tint(.appPrimary)
                     .padding(.top, -8)
             }
         }
