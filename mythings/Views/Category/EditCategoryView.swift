@@ -1,20 +1,24 @@
 //
-//  AddCategoryView.swift
+//  EditCategoryView.swift
 //  mythings
 //
-//  Created by Designer on 2025/4/29.
+//  Created by Designer on 2025/8/20.
 //
+
 
 import SwiftUI
 
-struct AddCategoryView: View {
+struct EditCategoryView: View {
     @ObservedObject var categoryStore: CategoryStore
     @Environment(\.dismiss) var dismiss
-
-    @State private var categoryName = "New Category"
-    @State private var emoji = "🎧"                 // ⭐️ 預設 emoji
+    
+    let category: Category
+    
+    @State private var categoryName = ""
+    @State private var emoji = ""
     @State private var showEmojiPicker = false
     @State private var showAlert = false
+    @State private var showDeleteAlert = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -23,7 +27,7 @@ struct AddCategoryView: View {
             HStack {
                 Button("Close") { dismiss() }
                 Spacer()
-                Text("Add Category")
+                Text("Edit Category")
                     .font(.title2.weight(.bold))
                 Spacer()
                 // 右側保留空間對齊
@@ -71,7 +75,12 @@ struct AddCategoryView: View {
                 if categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     showAlert = true
                 } else {
-                    categoryStore.addCategory(name: categoryName, emoji: emoji)
+                    let updatedCategory = Category(
+                        id: category.id,
+                        name: categoryName,
+                        emoji: emoji
+                    )
+                    categoryStore.updateCategory(category: updatedCategory)
                     dismiss()
                 }
             } label: {
@@ -83,22 +92,48 @@ struct AddCategoryView: View {
                     .foregroundStyle(.white)
             }
             .padding(.horizontal, 20)
+
+            // Delete 按鈕
+            Button {
+                showDeleteAlert = true
+            } label: {
+                Text("Delete")
+                    .foregroundColor(.red)
+            }
             .padding(.bottom, 8)
 
-            // 依照你的附圖保留 Delete 位置（此畫面新增時通常不需要顯示）
-            // Text("Delete").foregroundColor(.secondary)
-
         }
-        .presentationDragIndicator(.visible)
+        .presentationDragIndicator(.hidden)
+        .onAppear {
+            // 初始化編輯的值
+            categoryName = category.name
+            emoji = category.emoji
+        }
         .sheet(isPresented: $showEmojiPicker) {
             EmojiPickerView(selected: $emoji)
-                .presentationDetents([.medium, .large])
+
         }
         .alert("Please enter a category name", isPresented: $showAlert) {
             Button("OK", role: .cancel) { }
         }
+        .alert("Delete Category?", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            
+            Button("Delete", role: .destructive) {
+                if let index = categoryStore.categories.firstIndex(where: { $0.id == category.id }) {
+                    categoryStore.deleteCategory(at: IndexSet(integer: index))
+                }
+                dismiss()
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
     }
 }
 
-
-
+#Preview {
+    let previewStore = CategoryStore()
+    let sampleCategory = Category(name: "3C Device", emoji: "🎧")
+    
+    return EditCategoryView(categoryStore: previewStore, category: sampleCategory)
+}
