@@ -74,7 +74,7 @@ private struct ManualEmojiInput: View {
                 TextField("🙂", text: $input)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
-                    .onChange(of: input) { newValue in
+                    .onChange(of: input) { oldValue, newValue in
                         // 限制為第一個 character（通常是一個 emoji）
                         if let first = newValue.first {
                             input = String(first)
@@ -84,7 +84,11 @@ private struct ManualEmojiInput: View {
                     }
                     .frame(height: 44)
                     .padding(.horizontal, 12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+
 
                 Button("Use") {
                     if let first = input.first {
