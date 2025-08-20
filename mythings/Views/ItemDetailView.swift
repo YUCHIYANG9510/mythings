@@ -101,6 +101,7 @@ struct ItemDetailView: View {
 
         // 編輯 sheet
         .sheet(isPresented: $showEdit) {
+            
             AddItemView(
                 selectedImage: Binding(get: { editImage }, set: { editImage = $0 }),
                 existingItem: item,
@@ -120,6 +121,7 @@ struct ItemDetailView: View {
                 // 回傳給外層讓資料保存
                 onEdited?(updated)
             }
+            
         }
     }
 

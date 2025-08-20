@@ -8,8 +8,6 @@
 import Foundation
 import SwiftUI
 
-
-
 class CategoryStore: ObservableObject {
     @Published var categories: [Category] = [] {
         didSet { saveCategories() }
@@ -46,7 +44,9 @@ class CategoryStore: ObservableObject {
         categories.remove(atOffsets: indexSet)
     }
 
-
+    func moveCategory(from source: IndexSet, to destination: Int) {
+        categories.move(fromOffsets: source, toOffset: destination)
+    }
     
     func updateCategory(category: Category) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
