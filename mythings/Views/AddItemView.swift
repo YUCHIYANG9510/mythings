@@ -94,7 +94,7 @@ struct AddItemView: View {
                     dateSection
                     saveButton
                 }
-                .padding(.horizontal, 36)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
             .navigationTitle(existingItem == nil ? "Add item" : "Edit item")
@@ -168,13 +168,13 @@ private extension AddItemView {
     }
 
     var titleField: some View {
-        LabeledTextField(title: "Title", placeholder: "T-shirt", text: $name)
+        LabeledTextField(title: "Title", placeholder: "", text: $name)
     }
 
     var priceField: some View {
         // 輸入時沒有 $，左邊固定顯示 label；儲存時補一個 $
         LabeledTextField(title: "Price",
-                         placeholder: "1,200",
+                         placeholder: "",
                          text: $price,
                          keyboard: .decimalPad,
                          prefix: "$")
@@ -189,7 +189,7 @@ private extension AddItemView {
                 .padding(.horizontal, 14)
                 .frame(height: 48)
                 .background(fieldBG)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
             BrandChipsView(brandStore: brandStore, selectedBrand: $brand)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -204,7 +204,7 @@ private extension AddItemView {
             }
             .padding()
             .background(fieldBG)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
 
             if useDate {
                 DatePicker("Select Date", selection: $selectedDate, displayedComponents: [.date])
@@ -444,7 +444,7 @@ private struct LabeledTextField: View {
             .padding(.horizontal, 14)
             .frame(height: 48)
             .background(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
 }
