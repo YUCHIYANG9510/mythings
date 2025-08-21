@@ -45,6 +45,36 @@ class ImageCacheManager: ObservableObject {
     func invalidateCache() { cacheInvalidationTrigger = UUID() }
 }
 
+// 新增：極輕量的記憶體快取與非同步載入
+final class ImageMemoryCache {
+    static let shared = ImageMemoryCache()
+    private let cache = NSCache<NSString, UIImage>()
+
+    func get(_ key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    func set(_ key: String, image: UIImage?) {
+        guard let image else { return }
+        cache.setObject(image, forKey: key as NSString)
+    }
+
+    /// 非同步從快取/磁碟讀取
+    func loadImage(named imageName: String, completion: @escaping (UIImage?) -> Void) {
+        if let cached = get(imageName) {
+            completion(cached)
+            return
+        }
+        let path = FileManager.documentsDirectory.appendingPathComponent(imageName).path
+        DispatchQueue.global(qos: .userInitiated).async {
+            let img = UIImage(contentsOfFile: path)
+            if let img { self.set(imageName, image: img) }
+            DispatchQueue.main.async { completion(img) }
+        }
+    }
+}
+
+
 struct ContentView: View {
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
@@ -226,6 +256,17 @@ struct ContentView: View {
                 selectedPage = idx
             }
         }
+        
+        .onAppear {
+            HapticsManager.shared.prepare()              // 首次預熱
+            selectionHaptic.prepare()                    // 若還有別的 selection haptic
+        }
+        .onChange(of: selectedPage) { _, _ in
+            // 你原本就會 pageSnap，這裡也順手再預熱下一次
+            HapticsManager.shared.prepare()
+            selectionHaptic.prepare()
+        }
+        
     }
     
     private func saveItems() {
@@ -294,20 +335,20 @@ struct ListItemImageView: View {
     let imageName: String
     @StateObject private var cacheManager = ImageCacheManager.shared
     @State private var image: UIImage?
+
     var body: some View {
         Group {
-            if let image = image {
+            if let image {
                 ZStack {
                     Color(.systemGray6)
                     Image(uiImage: image).resizable().scaledToFit()
                 }
                 .frame(width: 80, height: 80)
             } else {
+                // 先畫骨架，避免佔位跳動
                 ZStack {
                     Color(.systemGray6)
-                    Image(systemName: "photo")
-                        .resizable().scaledToFit()
-                        .frame(width: 30).foregroundColor(.gray)
+                    ProgressView() // 或保留你的 photo 圖示
                 }
                 .frame(width: 80, height: 80)
             }
@@ -316,9 +357,11 @@ struct ListItemImageView: View {
         .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
         .onChangeCompat(of: imageName) { loadImage() }
     }
+
     private func loadImage() {
-        let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
-        image = UIImage(contentsOfFile: imagePath)
+        ImageMemoryCache.shared.loadImage(named: imageName) { img in
+            self.image = img
+        }
     }
 }
 
@@ -339,29 +382,37 @@ struct ItemImageView: View {
     let imageName: String
     @StateObject private var cacheManager = ImageCacheManager.shared
     @State private var image: UIImage?
+
     var body: some View {
         Group {
-            if let image = image {
+            if let image {
                 ZStack {
                     Color(.systemGray6)
-                    Image(uiImage: image).resizable().scaledToFit().frame(height: 120)
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 120)
                 }
-                .frame(height: 150).cornerRadius(8)
+                .frame(height: 150)
+                .cornerRadius(8)
             } else {
                 ZStack {
                     Color(.systemGray6)
-                    Image(systemName: "photo").resizable().scaledToFit().frame(height: 60).foregroundColor(.gray)
+                    ProgressView()
                 }
-                .frame(height: 150).cornerRadius(8)
+                .frame(height: 150)
+                .cornerRadius(8)
             }
         }
         .onAppear(perform: loadImage)
         .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
         .onChangeCompat(of: imageName) { loadImage() }
     }
+
     private func loadImage() {
-        let imagePath = FileManager.documentsDirectory.appendingPathComponent(imageName).path
-        image = UIImage(contentsOfFile: imagePath)
+        ImageMemoryCache.shared.loadImage(named: imageName) { img in
+            self.image = img
+        }
     }
 }
 
