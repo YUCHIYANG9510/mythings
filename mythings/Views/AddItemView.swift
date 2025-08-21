@@ -104,8 +104,15 @@ struct AddItemView: View {
                     Button("Cancel") { dismiss() }
                         .foregroundColor(.secondary)
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveTapped()
+                    }
+                    .foregroundColor(.secondary)
+                }
             }
         }
+
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(image: $selectedImage)
         }
@@ -120,6 +127,15 @@ struct AddItemView: View {
         .alert("請填寫所有欄位", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) {}
         }
+        // 當管理頁關閉後，若原本選中的分類被刪除，回退到第一個有效分類或清空
+        .onChange(of: showManageCategories) { _, isShowing in
+            if !isShowing {
+                let exists = categoryStore.categories.contains { $0.name == category }
+                if !exists {
+                    category = categoryStore.categories.first?.name ?? ""
+                }
+            }
+        }
     }
 }
 
@@ -131,8 +147,9 @@ private extension AddItemView {
 
     var categoryButton: some View {
         Button { showCategorySheet = true } label: {
+            let emoji = categoryStore.categories.first(where: { $0.name == category })?.emoji ?? "🧩"
             HStack(spacing: 8) {
-                Text(categoryEmoji(for: category))
+                Text(emoji)
                 Text(category.isEmpty ? "Select Category" : category)
                     .font(.headline)
                     .foregroundColor(.primary)
@@ -172,7 +189,6 @@ private extension AddItemView {
     }
 
     var priceField: some View {
-        // 輸入時沒有 $，左邊固定顯示 label；儲存時補一個 $
         LabeledTextField(title: "Price",
                          placeholder: "",
                          text: $price,
@@ -182,16 +198,19 @@ private extension AddItemView {
 
     @ViewBuilder
     var brandSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Brand").font(.footnote).foregroundColor(.secondary)
-            TextField("Brand Name", text: $brand)
-                .textInputAutocapitalization(.words)
-                .padding(.horizontal, 14)
-                .frame(height: 48)
-                .background(fieldBG)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-            BrandChipsView(brandStore: brandStore, selectedBrand: $brand)
-                .frame(maxWidth: .infinity, alignment: .leading)
+           
+            VStack(spacing: 16) {
+                TextField("Brand Name", text: $brand)
+                    .textInputAutocapitalization(.words)
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(fieldBG)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                BrandChipsView(brandStore: brandStore, selectedBrand: $brand)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -230,30 +249,37 @@ private extension AddItemView {
 
     @ViewBuilder
     var categorySheet: some View {
-        NavigationView {
+        NavigationStack {
             List {
-                ForEach(categoryStore.categories) { c in
-                    Button {
-                        category = c.name
-                        showCategorySheet = false
-                    } label: {
-                        HStack {
-                            Text(categoryEmoji(for: c.name))
-                            Text(c.name)
-                                .foregroundColor(.primary)
-                            if c.name == category {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.secondary)
+                if categoryStore.categories.isEmpty {
+                    ContentUnavailableView("No categories",
+                                           systemImage: "square.grid.2x2",
+                                           description: Text("Tap Manage to add some."))
+                } else {
+                    ForEach(categoryStore.categories) { c in
+                        Button {
+                            category = c.name
+                            showCategorySheet = false
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(c.emoji)
+                                Text(c.name)
+                                    .foregroundColor(.primary)
+                                if c.name == category {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.vertical, 4)
                 }
             }
-            
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.7)])
+        .presentationCornerRadius(40)
     }
 }
 
@@ -269,7 +295,6 @@ private extension AddItemView {
                 .appendingPathComponent(item.imageName).path) {
                 selectedImage = image
             }
-            // ✅ 日期：有存就打開 toggle 並顯示
             if let d = item.date {
                 useDate = true
                 selectedDate = d
@@ -280,16 +305,6 @@ private extension AddItemView {
             category = categoryStore.categories[0].name
             useDate = false
         }
-    }
-
-    func categoryEmoji(for name: String) -> String {
-        let key = name.lowercased()
-        if key.contains("top") || key.contains("shirt") { return "👕" }
-        if key.contains("pant") || key.contains("jean") { return "👖" }
-        if key.contains("shoe") || key.contains("sneaker") { return "👟" }
-        if key.contains("dress") { return "👗" }
-        if key.contains("bag") { return "👜" }
-        return "🧩"
     }
 
     func priceWithDollar(_ raw: String) -> String {
@@ -311,7 +326,7 @@ private extension AddItemView {
                 category: category,
                 name: name,
                 price: priceWithDollar(price),
-                date: useDate ? selectedDate : nil     // ✅ 寫入日期（或 nil）
+                date: useDate ? selectedDate : nil
             )
             ImageCacheManager.shared.invalidateCache()
             onComplete(item)
@@ -335,7 +350,6 @@ private struct BrandChipsView: View {
     @Binding var selectedBrand: String
     @Environment(\.colorScheme) var colorScheme
 
-    // Add Tag 的顏色（可改成你的品牌色）
     private let addColor: Color = .primary
 
     var body: some View {
@@ -355,7 +369,6 @@ private struct BrandChipsView: View {
                 )
             }
 
-            // Add Tag 也作為 chip，會跟著換行
             Button(action: addTag) {
                 HStack(spacing: 8) {
                     Image(systemName: "plus")
@@ -417,12 +430,10 @@ private struct RemovableChip: View {
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(isSelected ? Color.black : Color.clear, lineWidth: 2) // 🔥選取時黑色框線
+                .stroke(isSelected ? Color.black : Color.clear, lineWidth: 2)
         )
     }
 }
-
-
 
 // MARK: - Reusable labeled text field
 private struct LabeledTextField: View {
@@ -437,7 +448,7 @@ private struct LabeledTextField: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.footnote).foregroundColor(.secondary)
             HStack(spacing: 8) {
-                if let prefix { Text(prefix).foregroundColor(.gray) } // 固定顯示的符號
+                if let prefix { Text(prefix).foregroundColor(.gray) }
                 TextField(placeholder, text: $text)
                     .keyboardType(keyboard)
             }

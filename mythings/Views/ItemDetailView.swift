@@ -71,7 +71,7 @@ struct ItemDetailView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 32)
-            .padding(.top, 12)
+            .padding(.vertical, 8)
 
             // 圖片
             if let image = image {

@@ -17,7 +17,7 @@ struct ManageCategoriesView: View {
     @State private var showDeleteAlert = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 16) {
 
             List {
                 Section {
@@ -32,7 +32,7 @@ struct ManageCategoriesView: View {
 
                             Spacer()
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2.5)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             editingCategory = category
