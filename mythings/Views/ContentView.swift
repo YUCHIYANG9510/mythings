@@ -98,6 +98,18 @@ struct ContentView: View {
 
     @State private var selectedPage: Int = 0
     
+    // MARK: - 新增：排序狀態
+    @State private var sortKey: SortKey = .purchaseDate
+    @State private var sortOrder: SortOrder = .descending  // 預設顯示「最新在前」
+    
+    // ✅ 永久化儲存
+    @AppStorage(
+        "sort.key"
+    ) private var storedSortKey: String = SortKey.purchaseDate.rawValue
+    @AppStorage(
+        "sort.order"
+    ) private var storedSortOrder: String = SortOrder.descending.rawValue
+    
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
@@ -115,6 +127,11 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 新增：排序後的顯示清單，不改動原本 items 儲存順序
+    private var displayedItems: [Item] {
+            sort(items, by: sortKey, order: sortOrder)
+        }
+    
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
@@ -123,6 +140,8 @@ struct ContentView: View {
                         isSearching: $isSearching,
                         text: $searchText,
                         viewMode: $viewMode,
+                        sortKey: $sortKey,
+                        sortOrder: $sortOrder,
                         navigateToSettings: { path.append(.settings) }
                     )
                     CategoryScrollView(
@@ -134,11 +153,11 @@ struct ContentView: View {
                         selectedPage: $selectedPage,
                         selectedCategory: $selectedCategory,
                         viewMode: viewMode,
-                        allItems: items,
+                        allItems: displayedItems,      // 🔁 這裡改用排序後清單
                         searchText: searchText,
                         selectedItem: $selectedItem,
                         editingItem: $editingItem,
-                        items: $items,
+                        items: $items,                 // 維持原本的 binding，供編輯/刪除/新增
                         saveItems: saveItems
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -172,6 +191,29 @@ struct ContentView: View {
                 }
             }
         }
+        // 讀取現有資料（包含 items）後，同步還原排序設定
+        .onAppear {
+            loadItems()
+            if let idx = categoryNames.firstIndex(of: selectedCategory) {
+                selectedPage = idx
+            }
+
+            // 🔁 還原排序設定
+            sortKey = SortKey(rawValue: storedSortKey) ?? .purchaseDate
+            sortOrder = SortOrder(rawValue: storedSortOrder) ?? .descending
+
+            HapticsManager.shared.prepare()
+            selectionHaptic.prepare()
+        }
+
+        // 🔁 每次變更就寫回 UserDefaults
+        .onChange(of: sortKey) { _, newValue in
+            storedSortKey = newValue.rawValue
+        }
+        .onChange(of: sortOrder) { _, newValue in
+            storedSortOrder = newValue.rawValue
+        }
+        
         .sheet(isPresented: $showManageCategories) { ManageCategoriesView(categoryStore: categoryStore) }
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
@@ -326,6 +368,41 @@ struct ContentView: View {
             return nil
         }
     }
+    
+    // MARK: - 新增：排序工具
+       private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] {
+           var sorted = items.sorted { a, b in
+               switch key {
+               case .purchaseDate:
+                   // 假設 Item.date 是 Date?；若是 String 請告訴我格式再幫你轉
+                   let da = a.date ?? .distantPast
+                   let db = b.date ?? .distantPast
+                   return da < db
+
+               case .price:
+                   let pa = priceValue(a.price)
+                   let pb = priceValue(b.price)
+                   return pa < pb
+
+               case .name:
+                   return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+               }
+           }
+           if order == .descending { sorted.reverse() }
+           return sorted
+       }
+    
+    /// 將字串價格（例如 "$1,299.50" 或 "1299"）轉成 Double 用於排序
+        private func priceValue(_ s: String) -> Double {
+            // 去除貨幣符號與空白，保留數字與小數點
+            let cleaned = s
+                .replacingOccurrences(of: ",", with: "")
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "NT$", with: "")
+                .replacingOccurrences(of: "$", with: "")
+            return Double(cleaned) ?? 0
+        }
+    
 }
 
 
