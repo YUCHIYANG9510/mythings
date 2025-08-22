@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ItemCell: View {
     let item: Item
@@ -22,7 +23,6 @@ struct ItemCell: View {
             HStack {
                 Text(item.name).font(.subheadline).lineLimit(1)
                 Spacer()
-                // ✅ 統一顯示價錢
                 Text(item.displayPrice)
                     .font(.caption2)
                     .foregroundColor(.gray)
@@ -39,5 +39,16 @@ struct ItemCell: View {
                 saveItems()
             }
         }
+        // ✅ 加上拖曳&放置
+        .onDrag {
+            ItemDragStore.shared.draggingID = item.id
+            return NSItemProvider(object: item.id.uuidString as NSString)
+        }
+        .onDrop(of: [.text],
+                delegate: ItemReorderDropDelegate(items: $items,
+                                                  currentID: item.id,
+                                                  onCommit: saveItems))
     }
 }
+
+

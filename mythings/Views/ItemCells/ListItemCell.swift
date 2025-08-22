@@ -5,7 +5,9 @@
 //  Created by Designer on 2025/8/15.
 //
 
+// ListItemCell.swift
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ListItemCell: View {
     let item: Item
@@ -26,7 +28,6 @@ struct ListItemCell: View {
                     .lineLimit(1)
             }
             Spacer()
-            // ✅ 統一顯示價錢
             Text(item.displayPrice)
                 .font(.subheadline)
                 .foregroundColor(.gray)
@@ -43,5 +44,14 @@ struct ListItemCell: View {
                 saveItems()
             }
         }
+        // ✅ 加上拖曳&放置
+        .onDrag {
+            ItemDragStore.shared.draggingID = item.id
+            return NSItemProvider(object: item.id.uuidString as NSString)
+        }
+        .onDrop(of: [.text],
+                delegate: ItemReorderDropDelegate(items: $items,
+                                                  currentID: item.id,
+                                                  onCommit: saveItems))
     }
 }
