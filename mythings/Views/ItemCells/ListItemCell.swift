@@ -36,10 +36,11 @@ struct ListItemCell: View {
         .padding(.horizontal, 16)
         .background(Color(.systemGray6))
         .cornerRadius(8)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture { selectedItem = item }
         .contextMenu {
-            Button("編輯") { editingItem = item }
-            Button("刪除", role: .destructive) {
+            Button("Edit") { editingItem = item }
+            Button("Delete", role: .destructive) {
                 items.removeAll { $0.id == item.id }
                 saveItems()
             }
@@ -49,6 +50,7 @@ struct ListItemCell: View {
             ItemDragStore.shared.draggingID = item.id
             return NSItemProvider(object: item.id.uuidString as NSString)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onDrop(of: [.text],
                 delegate: ItemReorderDropDelegate(items: $items,
                                                   currentID: item.id,
