@@ -19,8 +19,17 @@ class ItemStore: ObservableObject {
         loadItems()
     }
     
+    // ✅ 新增的放最前面
     func addItem(item: Item) {
-        items.append(item)
+        items.insert(item, at: 0)
+        saveItems()
+    }
+    
+    // ✅ 批次新增（確保加入後順序為「最後加入的在最上方」）
+    func addItems(_ newItems: [Item]) {
+        for item in newItems.reversed() {
+            items.insert(item, at: 0)
+        }
         saveItems()
     }
     

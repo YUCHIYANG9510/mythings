@@ -99,13 +99,13 @@ struct ContentView: View {
     @State private var selectedPage: Int = 0
     
     // MARK: - 新增：排序狀態
-    @State private var sortKey: SortKey = .purchaseDate
+    @State private var sortKey: SortKey = .none
     @State private var sortOrder: SortOrder = .descending  // 預設顯示「最新在前」
     
     // ✅ 永久化儲存
     @AppStorage(
         "sort.key"
-    ) private var storedSortKey: String = SortKey.purchaseDate.rawValue
+    )   private var storedSortKey: String   = SortKey.none.rawValue
     @AppStorage(
         "sort.order"
     ) private var storedSortOrder: String = SortOrder.descending.rawValue
@@ -199,7 +199,7 @@ struct ContentView: View {
             }
 
             // 🔁 還原排序設定
-            sortKey = SortKey(rawValue: storedSortKey) ?? .purchaseDate
+            sortKey   = SortKey(rawValue: storedSortKey) ?? .none
             sortOrder = SortOrder(rawValue: storedSortOrder) ?? .descending
 
             HapticsManager.shared.prepare()
@@ -276,7 +276,7 @@ struct ContentView: View {
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                items.append(newItem)
+                items.insert(newItem, at: 0)
                 selectedImage = nil
                 isAddingNewItem = false
                 saveItems()
@@ -386,6 +386,9 @@ struct ContentView: View {
 
                case .name:
                    return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+                   
+               case .none:
+                   return false
                }
            }
            if order == .descending { sorted.reverse() }

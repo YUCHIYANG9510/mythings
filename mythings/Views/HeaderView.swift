@@ -8,6 +8,7 @@
 import SwiftUI
 
 enum SortKey: String, CaseIterable, Identifiable {
+    case none
     case purchaseDate
     case price
     case name
@@ -16,6 +17,7 @@ enum SortKey: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .none:         return "Default"
         case .purchaseDate: return "Purchase Date"
         case .price:        return "Price"
         case .name:         return "Name"
@@ -24,6 +26,7 @@ enum SortKey: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .none:         return "line.3.horizontal"
         case .purchaseDate: return "calendar"
         case .price:        return "dollarsign.circle"
         case .name:         return "textformat.abc"
@@ -42,6 +45,7 @@ enum SortOrder: String {
 /// 實際顯示的選單文字
 func sortLabel(for key: SortKey, order: SortOrder) -> String {
     switch (key, order) {
+    case (.none, _):                   return "Default Order"
     case (.purchaseDate, .descending): return "Newest First"
     case (.purchaseDate, .ascending):  return "Oldest First"
     case (.price, .ascending):         return "Lowest Price"
@@ -119,6 +123,7 @@ struct HeaderView: View {
                     } label: {
                         Label(sortLabel(for: sortKey, order: sortOrder), systemImage: sortOrder.arrow)
                     }
+                    .disabled(sortKey == .none)
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
                         .font(.title2)
