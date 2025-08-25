@@ -181,7 +181,7 @@ struct AddItemView: View {
 
         .onAppear(perform: configureInitialValues)
 
-        .alert("請填寫所有欄位", isPresented: $showValidationAlert) {
+        .alert("Please complete all fields", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) {}
         }
         
@@ -250,7 +250,7 @@ private extension AddItemView {
                 Text("Tap to add image").font(.subheadline).foregroundColor(.gray)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .frame(height: 220)
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .onTapGesture { showImageSourceMenu = true }       // ← 用選單（相簿/拍照）

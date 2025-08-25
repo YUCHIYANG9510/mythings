@@ -101,7 +101,6 @@ struct ItemDetailView: View {
 
         // 編輯 sheet
         .sheet(isPresented: $showEdit) {
-            
             AddItemView(
                 selectedImage: Binding(get: { editImage }, set: { editImage = $0 }),
                 existingItem: item,
@@ -109,20 +108,22 @@ struct ItemDetailView: View {
                 brandStore: brandStore,
                 showManageCategories: .constant(false)
             ) { updated in
-                // 更新本畫面內容
+                let oldName = item.imageName
                 self.item = updated
                 self.editImage = nil
-                ImageCacheManager.shared.invalidateCache()
+
+                // ✅ 指定 key 清除
+                ImageCacheManager.shared.invalidateCache(for: oldName)
+                if oldName != updated.imageName {
+                    ImageCacheManager.shared.invalidateCache(for: updated.imageName)
+                }
                 loadImage()
-                
-                // ✅ 關閉編輯頁（sheet）
+
                 showEdit = false
-                
-                // 回傳給外層讓資料保存
                 onEdited?(updated)
             }
-            
         }
+
     }
 
     private func loadImage() {

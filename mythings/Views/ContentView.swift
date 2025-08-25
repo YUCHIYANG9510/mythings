@@ -39,42 +39,8 @@ extension View {
     }
 }
 
-class ImageCacheManager: ObservableObject {
-    static let shared = ImageCacheManager()
-    @Published var cacheInvalidationTrigger = UUID()
-    func invalidateCache() { cacheInvalidationTrigger = UUID() }
-}
 
-// 新增：極輕量的記憶體快取與非同步載入
-final class ImageMemoryCache {
-    static let shared = ImageMemoryCache()
-    private let cache = NSCache<NSString, UIImage>()
 
-    func get(_ key: String) -> UIImage? {
-        cache.object(forKey: key as NSString)
-    }
-
-    func set(_ key: String, image: UIImage?) {
-        guard let image else { return }
-        cache.setObject(image, forKey: key as NSString)
-    }
-
-    /// 非同步從快取/磁碟讀取
-    func loadImage(named imageName: String, completion: @escaping (UIImage?) -> Void) {
-        if let cached = get(imageName) {
-            completion(cached)
-            return
-        }
-        let path = FileManager.documentsDirectory.appendingPathComponent(imageName).path
-        DispatchQueue.global(qos: .userInitiated).async {
-            let img = UIImage(contentsOfFile: path)
-            if let img { self.set(imageName, image: img) }
-            DispatchQueue.main.async { completion(img) }
-        }
-    }
-}
-
-// 放在 ContentView.swift 最上面區域（import 後、struct 前都可以）
 struct PendingPhoto: Identifiable {
     let id = UUID()
     let image: UIImage
@@ -276,12 +242,21 @@ struct ContentView: View {
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                if let idx = items.firstIndex(where: { $0.id == editing.id }) { items[idx] = newItem }
+                if let idx = items.firstIndex(where: { $0.id == editing.id }) {
+                    items[idx] = newItem
+                }
+                // ✅ 重要：把舊的 / 新的 imageName 從快取移除
+                ImageCacheManager.shared.invalidateCache(for: editing.imageName)
+                if editing.imageName != newItem.imageName {
+                    ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
+                }
+
                 editingItem = nil
                 selectedImage = nil
                 saveItems()
             }
         }
+
         .sheet(isPresented: $isAddingNewItem) {
             AddItemView(
                 selectedImage: $selectedImage,
@@ -294,8 +269,12 @@ struct ContentView: View {
                 selectedImage = nil
                 isAddingNewItem = false
                 saveItems()
+
+                // ✅ 新增完也把該圖清掉（避免同名覆蓋的情況）
+                ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
             }
         }
+
         
         .sheet(item: $pendingPhoto) { payload in
             EditPhotoView(
