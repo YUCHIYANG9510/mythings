@@ -181,8 +181,8 @@ struct ContentView: View {
             if let idx = categoryNames.firstIndex(of: selectedCategory) {
                 selectedPage = idx
             }
-
-            // 🔁 還原排序設定
+            
+            // 還原排序設定
             sortKey   = SortKey(rawValue: storedSortKey) ?? .none
             sortOrder = SortOrder(rawValue: storedSortOrder) ?? .descending
 
@@ -279,7 +279,7 @@ struct ContentView: View {
                 original: payload.image,
                 initialPrefRemoveBG: prefRemoveBG,
                 removeBG: { img in
-                    await removeBackground(from: img) // 這個就是你原本的 Vision 去背，不含動畫
+                    await removeBackground(from: img)
                 },
                 onDone: { finalImage, newPref in
                     prefRemoveBG = newPref
@@ -293,18 +293,16 @@ struct ContentView: View {
             .presentationCornerRadius(24)
         }
 
-        
-        
-        .onAppear {
-            loadItems()
-            if let idx = categoryNames.firstIndex(of: selectedCategory) { selectedPage = idx }
-        }
+       
         .onChange(of: selectedPage) { _, newValue in
             if categoryNames.indices.contains(newValue) {
                 HapticsManager.shared.pageSnap(strength: lastSwipeStrength)
                 let cat = categoryNames[newValue]
                 if cat != selectedCategory { selectedCategory = cat }
             }
+            // 預熱下次觸覺回饋
+            HapticsManager.shared.prepare()
+            selectionHaptic.prepare()
         }
         .onChange(of: selectedCategory) { _, newValue in
             if let idx = categoryNames.firstIndex(of: newValue), idx != selectedPage {
@@ -312,15 +310,7 @@ struct ContentView: View {
             }
         }
         
-        .onAppear {
-            HapticsManager.shared.prepare()              // 首次預熱
-            selectionHaptic.prepare()                    // 若還有別的 selection haptic
-        }
-        .onChange(of: selectedPage) { _, _ in
-            // 你原本就會 pageSnap，這裡也順手再預熱下一次
-            HapticsManager.shared.prepare()
-            selectionHaptic.prepare()
-        }
+      
         
     }
     
