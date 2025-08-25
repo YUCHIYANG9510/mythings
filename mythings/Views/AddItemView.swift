@@ -1,4 +1,7 @@
 import SwiftUI
+import Vision
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 // MARK: - FlowLayout (iOS 16+)
 @available(iOS 16.0, *)
@@ -65,7 +68,6 @@ struct AddItemView: View {
     @ObservedObject var brandStore: BrandStore
     @Binding var showManageCategories: Bool
     @Environment(\.colorScheme) var colorScheme
-
     @Environment(\.dismiss) var dismiss
     var onComplete: (Item) -> Void
 
@@ -75,8 +77,19 @@ struct AddItemView: View {
     @State private var category: String = ""
     @State private var price: String = ""
     @State private var showValidationAlert = false
-    @State private var showImagePicker = false
-    @State private var showCategorySheet = false
+
+    // 原本就有的：控制相簿 / 分類 sheet
+    @State private var showImagePicker = false           // 保留，但不再直接用它；由選單控制
+    @State private var showCategorySheet = false         // ✅ 點分類按鈕只開這個
+
+    // 新增：影像來源選單 + 相機
+    @State private var showImageSourceMenu = false
+    @State private var showPhotoPicker = false
+    @State private var showCamera = false
+
+    // Edit Photo（資料驅動；用 Bool sheet）
+    @State private var pendingPhoto: UIImage?
+    @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
 
     // Date (optional)
     @State private var useDate = false
@@ -105,46 +118,106 @@ struct AddItemView: View {
                         .foregroundColor(.secondary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveTapped()
-                    }
-                    .foregroundColor(.secondary)
+                    Button("Save") { saveTapped() }
+                        .foregroundColor(.secondary)
                 }
             }
         }
 
-        .sheet(isPresented: $showImagePicker) {
-            ImagePicker(image: $selectedImage)
+        // 相簿
+        .sheet(isPresented: $showPhotoPicker) {
+            PhotoPicker(
+                selectedImage: Binding(
+                    get: { nil },
+                    set: { img in
+                        if let img { pendingPhoto = img }
+                    }
+                ),
+                shouldRemoveBackground: false
+            )
         }
-        .sheet(isPresented: $showCategorySheet) {
-            categorySheet
+
+        // 相機
+        .sheet(isPresented: $showCamera) {
+            CameraPicker(
+                selectedImage: Binding(
+                    get: { nil },
+                    set: { img in
+                        if let img { pendingPhoto = img }
+                    }
+                )
+            )
         }
+
+        // Edit Photo（可選是否去背）
+        .sheet(
+            isPresented: Binding(
+                get: { pendingPhoto != nil },
+                set: { if !$0 { pendingPhoto = nil } }
+            )
+        ) {
+            if let img = pendingPhoto {
+                EditPhotoView(
+                    original: img,
+                    initialPrefRemoveBG: prefRemoveBG,
+                    removeBG: { image in await removeBackground(from: image) },
+                    onDone: { finalImage, newPref in
+                        prefRemoveBG = newPref
+                        selectedImage = finalImage
+                        pendingPhoto = nil
+                    },
+                    onCancel: { pendingPhoto = nil }
+                )
+                .presentationDetents([.large])
+                .presentationCornerRadius(24)
+            }
+        }
+
+        // ✅ 只在外部有需求時才會開 Manage 頁（不影響分類按鈕）
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
                 .presentationDetents([.large])
         }
+
         .onAppear(perform: configureInitialValues)
+
         .alert("請填寫所有欄位", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) {}
         }
-        // 當管理頁關閉後，若原本選中的分類被刪除，回退到第一個有效分類或清空
-        .onChange(of: showManageCategories) { _, isShowing in
-            if !isShowing {
+        
+        .sheet(isPresented: $showCategorySheet) {
+            categorySheet
+        }
+        
+        // iOS 17 新式 onChange（零參數）
+        .onChange(of: showManageCategories) {
+            if !showManageCategories {
                 let exists = categoryStore.categories.contains { $0.name == category }
                 if !exists {
                     category = categoryStore.categories.first?.name ?? ""
                 }
             }
         }
+
+        // 影像來源選單：相簿 / 拍照 / 移除
+        .confirmationDialog("Update Image", isPresented: $showImageSourceMenu, titleVisibility: .visible) {
+            Button("Choose from Library") { showPhotoPicker = true }
+            Button("Take Photo") { showCamera = true }
+            if selectedImage != nil {
+                Button("Remove Image", role: .destructive) { selectedImage = nil }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 
-// MARK: - Sections (split to avoid type-check explosion)
+// MARK: - Sections
 private extension AddItemView {
     var fieldBG: Color {
         colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06)
     }
 
+    // ✅ 恢復原本行為：只開 categorySheet
     var categoryButton: some View {
         Button { showCategorySheet = true } label: {
             let emoji = categoryStore.categories.first(where: { $0.name == category })?.emoji ?? "🧩"
@@ -170,7 +243,7 @@ private extension AddItemView {
                 .frame(maxWidth: .infinity)
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .onTapGesture { showImagePicker = true }
+                .onTapGesture { showImageSourceMenu = true }   // ← 用選單（相簿/拍照）
         } else {
             VStack(spacing: 10) {
                 Image(systemName: "photo").font(.system(size: 40))
@@ -180,7 +253,7 @@ private extension AddItemView {
             .frame(height: 56)
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .onTapGesture { showImagePicker = true }
+            .onTapGesture { showImageSourceMenu = true }       // ← 用選單（相簿/拍照）
         }
     }
 
@@ -200,7 +273,7 @@ private extension AddItemView {
     var brandSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Brand").font(.footnote).foregroundColor(.secondary)
-           
+
             VStack(spacing: 16) {
                 TextField("Brand Name", text: $brand)
                     .textInputAutocapitalization(.words)
@@ -247,6 +320,7 @@ private extension AddItemView {
         .padding(.top, 10)
     }
 
+    // ✅ 保持你原來的 categorySheet
     @ViewBuilder
     var categorySheet: some View {
         NavigationStack {
@@ -460,23 +534,31 @@ private struct LabeledTextField: View {
     }
 }
 
-// MARK: - Preview
-#Preview {
-    AddItemView(
-        selectedImage: .constant(UIImage(systemName: "photo")),
-        existingItem: nil,
-        categoryStore: {
-            let s = CategoryStore()
-            s.categories = [Category(name: "Tops"), Category(name: "Pants"), Category(name: "Shoes")]
-            return s
-        }(),
-        brandStore: {
-            let s = BrandStore()
-            s.brands = ["Uniqlo", "MUJI", "Apple"]
-            return s
-        }(),
-        showManageCategories: .constant(false)
-    ) { item in
-        print("Saved: \(item)")
+// MARK: - 內建去背
+private extension AddItemView {
+    @MainActor
+    func removeBackground(from image: UIImage) async -> UIImage? {
+        guard let ciImage = CIImage(image: image) else { return nil }
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+        do {
+            try handler.perform([request])
+            guard let obs = request.results?.first as? VNInstanceMaskObservation else { return nil }
+            let maskBuffer = try obs.generateScaledMaskForImage(forInstances: obs.allInstances, from: handler)
+            let maskCI  = CIImage(cvPixelBuffer: maskBuffer)
+            let extent  = ciImage.extent
+            let clearBG = CIImage(color: .clear).cropped(to: extent)
+            let cut = CIFilter.blendWithMask()
+            cut.inputImage      = ciImage
+            cut.maskImage       = maskCI
+            cut.backgroundImage = clearBG
+            guard let output = cut.outputImage else { return nil }
+            let ctx = CIContext()
+            guard let cg = ctx.createCGImage(output, from: output.extent) else { return nil }
+            return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
+        } catch {
+            print("removeBackground error: \(error)")
+            return nil
+        }
     }
 }
