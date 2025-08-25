@@ -76,7 +76,6 @@ struct ContentView: View {
     // 預設顯示「最新在前」
     
 
-    
     /*  @State private var pendingOriginal: UIImage?
     // 拍攝/選取的原始圖，準備進入 Edit Photo
     @State private var showEditPhoto = false
@@ -204,8 +203,7 @@ struct ContentView: View {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    // 用資料來驅動 sheet，避免時序問題
-                    pendingPhoto = PendingPhoto(image: img)
+                    pendingPhoto = PendingPhoto(image: img)   // 直接進 pendingPhoto
                     selectedImage = nil
                 }
         }
@@ -214,7 +212,7 @@ struct ContentView: View {
             CameraPicker(selectedImage: $selectedImage)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    pendingPhoto = PendingPhoto(image: img)
+                    pendingPhoto = PendingPhoto(image: img)   // 直接進 pendingPhoto
                     selectedImage = nil
                 }
         }
@@ -281,22 +279,15 @@ struct ContentView: View {
                 original: payload.image,
                 initialPrefRemoveBG: prefRemoveBG,
                 removeBG: { img in
-                    await removeBackground(from: img)
+                    await removeBackground(from: img) // 這個就是你原本的 Vision 去背，不含動畫
                 },
                 onDone: { finalImage, newPref in
                     prefRemoveBG = newPref
                     selectedImage = finalImage
-                    // 為了避免「同時兩個 sheet 互搶」，
-                    // 把開啟 AddItemView 放到下一個 runloop
-                    DispatchQueue.main.async {
-                        isAddingNewItem = true
-                    }
+                    DispatchQueue.main.async { isAddingNewItem = true }
                     pendingPhoto = nil
                 },
-                onCancel: {
-                    // 取消就單純關閉，不做任何事
-                    pendingPhoto = nil
-                }
+                onCancel: { pendingPhoto = nil }
             )
             .presentationDetents([.large])
             .presentationCornerRadius(24)
