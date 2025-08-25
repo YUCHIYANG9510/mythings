@@ -74,6 +74,12 @@ final class ImageMemoryCache {
     }
 }
 
+// 放在 ContentView.swift 最上面區域（import 後、struct 前都可以）
+struct PendingPhoto: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
 
 struct ContentView: View {
     @State private var selectedCategory = "All"
@@ -100,7 +106,20 @@ struct ContentView: View {
     
     // MARK: - 新增：排序狀態
     @State private var sortKey: SortKey = .none
-    @State private var sortOrder: SortOrder = .descending  // 預設顯示「最新在前」
+    @State private var sortOrder: SortOrder = .descending
+    // 預設顯示「最新在前」
+    
+
+    
+    /*  @State private var pendingOriginal: UIImage?
+    // 拍攝/選取的原始圖，準備進入 Edit Photo
+    @State private var showEditPhoto = false
+    // 是否顯示 Edit Photo 頁 */
+    @State private var pendingPhoto: PendingPhoto?
+    // 用來驅動 sheet(item:)
+   
+    @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
+
     
     // ✅ 永久化儲存
     @AppStorage(
@@ -219,26 +238,21 @@ struct ContentView: View {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    Task {
-                        isRemovingBackground = true
-                        if let cut = await removeBackground(from: img) { selectedImage = cut }
-                        isRemovingBackground = false
-                        isAddingNewItem = (selectedImage != nil)
-                    }
+                    // 用資料來驅動 sheet，避免時序問題
+                    pendingPhoto = PendingPhoto(image: img)
+                    selectedImage = nil
                 }
         }
+
         .sheet(isPresented: $showCamera) {
             CameraPicker(selectedImage: $selectedImage)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    Task {
-                        isRemovingBackground = true
-                        if let cut = await removeBackground(from: img) { selectedImage = cut }
-                        isRemovingBackground = false
-                        isAddingNewItem = (selectedImage != nil)
-                    }
+                    pendingPhoto = PendingPhoto(image: img)
+                    selectedImage = nil
                 }
         }
+
         .sheet(item: $selectedItem) { item in
             ItemDetailView(
                 item: item,
@@ -282,6 +296,35 @@ struct ContentView: View {
                 saveItems()
             }
         }
+        
+        .sheet(item: $pendingPhoto) { payload in
+            EditPhotoView(
+                original: payload.image,
+                initialPrefRemoveBG: prefRemoveBG,
+                removeBG: { img in
+                    await removeBackground(from: img)
+                },
+                onDone: { finalImage, newPref in
+                    prefRemoveBG = newPref
+                    selectedImage = finalImage
+                    // 為了避免「同時兩個 sheet 互搶」，
+                    // 把開啟 AddItemView 放到下一個 runloop
+                    DispatchQueue.main.async {
+                        isAddingNewItem = true
+                    }
+                    pendingPhoto = nil
+                },
+                onCancel: {
+                    // 取消就單純關閉，不做任何事
+                    pendingPhoto = nil
+                }
+            )
+            .presentationDetents([.large])
+            .presentationCornerRadius(24)
+        }
+
+        
+        
         .onAppear {
             loadItems()
             if let idx = categoryNames.firstIndex(of: selectedCategory) { selectedPage = idx }
