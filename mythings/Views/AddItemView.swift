@@ -127,9 +127,9 @@ struct AddItemView: View {
         // 相簿
         .sheet(isPresented: $showPhotoPicker) {
             PhotoPicker(
-                selectedImage: Binding(
-                    get: { nil },
-                    set: { img in
+                selectedImage: Binding<UIImage?>(
+                    get: { nil as UIImage? },
+                    set: { (img: UIImage?) in
                         if let img { pendingPhoto = img }
                     }
                 ),
@@ -137,17 +137,19 @@ struct AddItemView: View {
             )
         }
 
+
         // 相機
         .sheet(isPresented: $showCamera) {
             CameraPicker(
-                selectedImage: Binding(
-                    get: { nil },
-                    set: { img in
+                selectedImage: Binding<UIImage?>(
+                    get: { nil as UIImage? },
+                    set: { (img: UIImage?) in
                         if let img { pendingPhoto = img }
                     }
                 )
             )
         }
+
 
         // Edit Photo（可選是否去背）
         .sheet(
@@ -159,10 +161,8 @@ struct AddItemView: View {
             if let img = pendingPhoto {
                 EditPhotoView(
                     original: img,
-                    initialPrefRemoveBG: prefRemoveBG,
                     removeBG: { image in await removeBackground(from: image) },
-                    onDone: { finalImage, newPref in
-                        prefRemoveBG = newPref
+                    onDone: { finalImage in
                         selectedImage = finalImage
                         pendingPhoto = nil
                     },
@@ -172,6 +172,7 @@ struct AddItemView: View {
                 .presentationCornerRadius(24)
             }
         }
+
 
         // ✅ 只在外部有需求時才會開 Manage 頁（不影響分類按鈕）
         .sheet(isPresented: $showManageCategories) {

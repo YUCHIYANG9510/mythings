@@ -277,21 +277,22 @@ struct ContentView: View {
         .sheet(item: $pendingPhoto) { payload in
             EditPhotoView(
                 original: payload.image,
-                initialPrefRemoveBG: prefRemoveBG,
                 removeBG: { img in
                     await removeBackground(from: img)
                 },
-                onDone: { finalImage, newPref in
-                    prefRemoveBG = newPref
+                onDone: { finalImage in
                     selectedImage = finalImage
                     DispatchQueue.main.async { isAddingNewItem = true }
                     pendingPhoto = nil
                 },
-                onCancel: { pendingPhoto = nil }
+                onCancel: {
+                    pendingPhoto = nil
+                }
             )
             .presentationDetents([.large])
             .presentationCornerRadius(24)
         }
+
 
        
         .onChange(of: selectedPage) { _, newValue in
