@@ -102,19 +102,24 @@ struct ContentView: View {
     var categoryNames: [String] {
         var names = ["All"]; names.append(contentsOf: categoryStore.categories.map { $0.name }); return names
     }
-    private func itemsFor(category: String) -> [Item] {
-        let categoryFiltered = (category == "All") ? items : items.filter { $0.category == category }
+    // MARK: - 分類篩選後的顯示清單
+    /*private func itemsFor(category: String) -> [Item] {
+        let categoryFiltered = (category == "All") ? displayedItems : displayedItems.filter { $0.category == category }
         guard !searchText.isEmpty else { return categoryFiltered }
         return categoryFiltered.filter {
             $0.name.localizedCaseInsensitiveContains(searchText) ||
             $0.brand.localizedCaseInsensitiveContains(searchText)
         }
-    }
+    } */
 
-    // MARK: - 新增：排序後的顯示清單，不改動原本 items 儲存順序
+    // MARK: - 修正：排序後的顯示清單，sortKey == .none 時保持原始順序（最新在前）
     private var displayedItems: [Item] {
-            sort(items, by: sortKey, order: sortOrder)
+        if sortKey == .none {
+            return items  // 保持原始順序（新增時用 insert(at: 0)）
+        } else {
+            return sort(items, by: sortKey, order: sortOrder)
         }
+    }
     
     var body: some View {
         NavigationStack(path: $path) {
@@ -137,11 +142,11 @@ struct ContentView: View {
                         selectedPage: $selectedPage,
                         selectedCategory: $selectedCategory,
                         viewMode: viewMode,
-                        allItems: displayedItems,      // 🔁 這裡改用排序後清單
+                        allItems: displayedItems,      // ← 關鍵修改：傳入排序後的結果
                         searchText: searchText,
                         selectedItem: $selectedItem,
                         editingItem: $editingItem,
-                        items: $items,                 // 維持原本的 binding，供編輯/刪除/新增
+                        items: $items,                 // 保持原本 binding
                         saveItems: saveItems
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
