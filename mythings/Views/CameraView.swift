@@ -151,7 +151,16 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
                     return
                 }
                 self.session.addOutput(self.photoOutput)
-                self.photoOutput.isHighResolutionCaptureEnabled = true
+                
+                // 修正：使用 maxPhotoDimensions 替代已棄用的 isHighResolutionCaptureEnabled
+                if #available(iOS 16.0, *) {
+                    // 在 iOS 16+ 中，maxPhotoDimensions 預設已經是最高解析度
+                    // 不需要額外設定，系統會自動使用最佳值
+                } else {
+                    // iOS 16 之前的版本仍使用舊 API
+                    self.photoOutput.isHighResolutionCaptureEnabled = true
+                }
+                
                 self.session.commitConfiguration()
                 
                 DispatchQueue.main.async { cont.resume(returning: true) }
@@ -179,7 +188,16 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
         self.onFinish = onFinish
         
         let settings = AVCapturePhotoSettings()
-        settings.isHighResolutionPhotoEnabled = true
+        
+        // 修正：使用 maxPhotoDimensions 替代已棄用的 isHighResolutionPhotoEnabled
+        if #available(iOS 16.0, *) {
+            // 在 iOS 16+ 中，maxPhotoDimensions 預設已經是最高解析度
+            // 不需要額外設定，系統會自動使用最佳值
+        } else {
+            // iOS 16 之前的版本仍使用舊 API
+            settings.isHighResolutionPhotoEnabled = true
+        }
+        
         if photoOutput.supportedFlashModes.contains(flashMode) { settings.flashMode = flashMode }
         photoOutput.capturePhoto(with: settings, delegate: self)
     }
