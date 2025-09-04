@@ -22,6 +22,11 @@ enum ViewMode {
     case list
 }
 
+enum PageMode {
+    case `default`
+    case canvas
+}
+
 
 extension View {
     /// iOS 17 之後的 onChange 使用 0 或 2 參數；iOS 16 仍是舊版 1 參數。
@@ -69,7 +74,8 @@ struct ContentView: View {
     @State private var lastSwipeStrength: Double = 0.75
 
     @State private var selectedPage: Int = 0
-    
+    @State private var pageMode: PageMode = .default
+
     // MARK: - 新增：排序狀態
     @State private var sortKey: SortKey = .none
     @State private var sortOrder: SortOrder = .descending
@@ -123,56 +129,56 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: .bottomTrailing) {
+                // 這裡放你的主要內容（HeaderView / CategoryPager / CanvasBoardView 等）
                 VStack {
-                    HeaderView(
-                        isSearching: $isSearching,
-                        text: $searchText,
-                        viewMode: $viewMode,
-                        sortKey: $sortKey,
-                        sortOrder: $sortOrder,
-                        navigateToSettings: { path.append(.settings) }
-                    )
-                    CategoryScrollView(
-                        categoryNames: categoryNames,
-                        selectedCategory: $selectedCategory
-                    )
-                    CategoryPager(
-                        categoryNames: categoryNames,
-                        selectedPage: $selectedPage,
-                        selectedCategory: $selectedCategory,
-                        viewMode: viewMode,
-                        allItems: displayedItems,      // ← 關鍵修改：傳入排序後的結果
-                        searchText: searchText,
-                        selectedItem: $selectedItem,
-                        editingItem: $editingItem,
-                        items: $items,                 // 保持原本 binding
-                        saveItems: saveItems
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 6, coordinateSpace: .local)
-                            .onChanged { value in
-                                if !didPrepareHaptic,
-                                   abs(value.translation.width) > abs(value.translation.height),
-                                   abs(value.translation.width) > 8 {
-                                    HapticsManager.shared.prepare()
-                                    didPrepareHaptic = true
-                                }
-                            }
-                            .onEnded { value in
-                                let dx = value.predictedEndTranslation.width - value.translation.width
-                                let approxSpeed = min(1.0, max(0.0, Double(abs(dx) / 140.0)))
-                                lastSwipeStrength = 0.5 + 0.5 * approxSpeed
-                                didPrepareHaptic = false
-                            }
-                    )
+                    if pageMode == .default {
+                        HeaderView(
+                            isSearching: $isSearching,
+                            text: $searchText,
+                            viewMode: $viewMode,
+                            sortKey: $sortKey,
+                            sortOrder: $sortOrder,
+                            navigateToSettings: { path.append(.settings) }
+                        )
+                        CategoryScrollView(
+                            categoryNames: categoryNames,
+                            selectedCategory: $selectedCategory
+                        )
+                        CategoryPager(
+                            categoryNames: categoryNames,
+                            selectedPage: $selectedPage,
+                            selectedCategory: $selectedCategory,
+                            viewMode: viewMode,
+                            allItems: displayedItems,
+                            searchText: searchText,
+                            selectedItem: $selectedItem,
+                            editingItem: $editingItem,
+                            items: $items,
+                            saveItems: saveItems
+                        )
+                    } else {
+                        CanvasBoardView(items: displayedItems,
+                                        imageLoader: ImageMemoryCache.shared)
+                    }
                 }
+                
+                // FloatingAddMenu 獨立佈局
                 FloatingAddMenu(
                     isOpen: $showActionSheet,
                     showCamera: $showCamera,
                     showImagePicker: $showImagePicker
                 )
+
+                VStack {
+                       Spacer()
+                       HStack {
+                           Spacer()
+                           CanvasTabToggle(selected: $pageMode)
+                               .padding(.trailing, 20)
+                               .padding(.bottom, 24)
+                       }
+                   }
             }
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
@@ -502,6 +508,64 @@ struct ItemImageView: View {
         ImageMemoryCache.shared.loadImage(named: imageName) { img in
             self.image = img
         }
+    }
+}
+
+
+struct CanvasTabToggle: View {
+    @Binding var selected: PageMode
+
+    private func circle(isOn: Bool) -> some View {
+        Circle()
+            .fill(isOn ? Color.black : Color.clear)
+            .frame(width: 56, height: 56)
+            .overlay(
+                Image(systemName: isOn ? "cube.fill" : "cube")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(isOn ? .white : .black)
+            )
+    }
+
+    private func eyes(isOn: Bool) -> some View {
+        Circle()
+            .fill(isOn ? Color.black : Color.clear)
+            .frame(width: 56, height: 56)
+            .overlay(
+                Image(systemName: "eyes")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(isOn ? .white : .black)
+            )
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            // 左：Default
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                    selected = .default
+                }
+            } label: {
+                circle(isOn: selected == .default)
+            }
+            .accessibilityLabel("Default View")
+
+            // 右：Canvas
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                    selected = .canvas
+                }
+            } label: {
+                eyes(isOn: selected == .canvas)
+            }
+            .accessibilityLabel("Canvas View")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(.white)
+                .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 6)
+        )
     }
 }
 

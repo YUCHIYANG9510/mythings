@@ -23,41 +23,51 @@ struct FloatingAddMenu: View {
                     .transition(.opacity)
                     .onTapGesture { toggle(false) }
             }
+            
             VStack {
                 Spacer()
-                HStack {
-                    VStack(spacing: 16) {
-                        if isOpen {
-                            HStack(spacing: 12) {
-                                CircularIconButton(system: "photo.on.rectangle", label: "相簿", isVisible: showFirstButton) {
-                                    toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showImagePicker = true
-                                }
-                                CircularIconButton(system: "camera.fill", label: "拍照", isVisible: showSecondButton) {
-                                    toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showCamera = true
-                                }
+                
+                // 展開的選項（居中顯示）
+                if isOpen {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            CircularIconButton(system: "photo.on.rectangle", label: "相簿", isVisible: showFirstButton) {
+                                toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showImagePicker = true
                             }
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .bottom).combined(with: .opacity),
-                                removal: .move(edge: .bottom).combined(with: .opacity)
-                            ))
+                            CircularIconButton(system: "camera.fill", label: "拍照", isVisible: showSecondButton) {
+                                toggle(false); UIImpactFeedbackGenerator(style: .light).impactOccurred(); showCamera = true
+                            }
                         }
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            toggle(!isOpen)
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.title2.bold())
-                                .frame(width: 60, height: 60)
-                                .foregroundStyle(colorScheme == .dark ? .black : .white)
-                                .background(colorScheme == .dark ? Color.white : Color.black)
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                                .scaleEffect(isOpen ? 0.9 : 1.0)
-                                .rotationEffect(.degrees(isOpen ? 45 : 0))
-                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .move(edge: .bottom).combined(with: .opacity)
+                        ))
+                        Spacer()
                     }
-                    .frame(width: 60)
+                    .padding(.bottom, 16)
                 }
+                
+                // + 按鈕（居中）
+                HStack {
+                    Spacer()
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        toggle(!isOpen)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title2.bold())
+                            .frame(width: 60, height: 60)
+                            .foregroundStyle(colorScheme == .dark ? .black : .white)
+                            .background(colorScheme == .dark ? Color.white : Color.black)
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            .scaleEffect(isOpen ? 0.9 : 1.0)
+                            .rotationEffect(.degrees(isOpen ? 45 : 0))
+                    }
+                    Spacer()
+                }
+                
                 Spacer().frame(height: 30)
             }
         }
@@ -70,8 +80,7 @@ struct FloatingAddMenu: View {
                 showFirstButton = false; showSecondButton = false
             }
         }
-    }
-    private func toggle(_ open: Bool) {
+    };    private func toggle(_ open: Bool) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { isOpen = open }
     }
 }
