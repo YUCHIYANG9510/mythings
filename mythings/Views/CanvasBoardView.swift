@@ -12,40 +12,18 @@ struct CanvasBoardView: View {
     let imageLoader: ImageMemoryCache
 
     // 版面設定
-    private let itemSize: CGFloat = 160
-    private let itemSpacing: CGFloat = 24
-    private let edgePadding: CGFloat = 32
-    private let columnsCount: Int = 6
+    private let edgePadding: CGFloat = 10
+    private let minItemSize: CGFloat = 60
+    private let maxItemSize: CGFloat = 120
+    private let baseItemSize: CGFloat = 90
 
-    // 交錯位移（讓欄與欄之間上下錯開）
-    private var staggerOffsetY: CGFloat { (itemSize + itemSpacing) * 0.5 }
-
-    // 依據交錯排版計算白板尺寸
-    private var boardSize: CGSize {
-        let totalColumns = CGFloat(columnsCount)
-        let rows = CGFloat((items.count + columnsCount - 1) / columnsCount)
-
-        let width = edgePadding * 2
-        + totalColumns * itemSize
-        + max(0, totalColumns - 1) * itemSpacing
-
-        // 高度要加上交錯帶來的額外空間（最後一欄可能下移）
-        let heightBase = edgePadding * 2
-        + rows * itemSize
-        + max(0, rows - 1) * itemSpacing
-
-        // 當有超過 1 欄時，最底下可能被偶數欄下移多佔 0.5 個格距
-        let extra = columnsCount > 1 ? staggerOffsetY : 0
-
-        return CGSize(width: max(width, 800), height: max(heightBase + extra, 600))
-    }
-
-    // 平移狀態
-    @State private var offset: CGSize = .zero
-    @State private var lastDrag: CGSize = .zero
-
-    // 預覽
+    // 點擊預覽
     @State private var previewing: Item?
+    @State private var floatingItems: [FloatingItem] = []
+    @State private var canvasSize: CGSize = .zero
+    
+    // 動畫控制
+    @State private var animationTimer: Timer?
 
     var body: some View {
         GeometryReader { geo in
@@ -54,152 +32,220 @@ struct CanvasBoardView: View {
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                     .ignoresSafeArea()
 
-                ZStack {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        let pos = staggeredPosition(for: index)
-                        CanvasItemCell(item: item, imageLoader: imageLoader) { tapped in
-                            previewing = tapped
-                        }
-                        .position(x: pos.x, y: pos.y)
+                // 漂浮的物件
+                ForEach(floatingItems, id: \.item.id) { floatingItem in
+                    CanvasItemCell(
+                        item: floatingItem.item,
+                        imageLoader: imageLoader,
+                        size: floatingItem.size,
+                        rotation: floatingItem.rotation
+                    ) { tapped in
+                        // 點擊時暫停動畫
+                        pauseAnimation()
+                        previewing = tapped
                     }
+                    .position(floatingItem.position)
                 }
-                .frame(width: boardSize.width, height: boardSize.height)
-                .offset(x: offset.width, y: offset.height)
-                .contentShape(Rectangle()) // 讓整塊可拖
-                .gesture(panGesture(viewSize: geo.size))
-                .animation(.spring(response: 0.22, dampingFraction: 0.9), value: offset)
             }
-            .onAppear { centerContentIfSmaller(in: geo.size) }
-            .onChange(of: geo.size) { _, newSize in centerContentIfSmaller(in: newSize) }
+            .onAppear {
+                canvasSize = geo.size
+                initializeFloatingItems()
+                startAnimation()
+            }
+            .onChange(of: geo.size) { _, newSize in
+                canvasSize = newSize
+                updateBoundariesForItems()
+            }
+            .onDisappear {
+                stopAnimation()
+            }
             .sheet(item: $previewing) { item in
                 CanvasPreview(item: item, imageLoader: imageLoader)
                     .presentationDetents([.medium, .large])
                     .presentationCornerRadius(24)
+                    .onDisappear {
+                        // 預覽關閉後恢復動畫
+                        startAnimation()
+                    }
             }
         }
     }
 
-    // MARK: - 交錯網格位置
-    private func staggeredPosition(for index: Int) -> CGPoint {
-        let col = index % columnsCount
-        let row = index / columnsCount
-
-        let x = edgePadding + itemSize / 2 + CGFloat(col) * (itemSize + itemSpacing)
-
-        // 偶數欄（或你想的任一規則）往下位移半格距
-        let yBase = edgePadding + itemSize / 2 + CGFloat(row) * (itemSize + itemSpacing)
-        let y = (col % 2 == 1) ? (yBase + staggerOffsetY) : yBase
-
-        return CGPoint(x: x, y: y)
-    }
-
-    // MARK: - 初始化：內容比螢幕小時置中
-    private func centerContentIfSmaller(in viewSize: CGSize) {
-        let bounds = panBounds(in: viewSize)
-        let centeredX = bounds.minX == bounds.maxX ? (viewSize.width - boardSize.width) / 2 : bounds.minX
-        let centeredY = bounds.minY == bounds.maxY ? (viewSize.height - boardSize.height) / 2 : bounds.minY
-
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            offset = CGSize(width: centeredX, height: centeredY)
-            lastDrag = offset
+    // MARK: - 初始化漂浮物件
+    private func initializeFloatingItems() {
+        guard !items.isEmpty else { return }
+        
+        var newFloatingItems: [FloatingItem] = []
+        
+        for item in items {
+            // 隨機大小
+            let sizeVariation = CGFloat.random(in: 0.8...1.3)
+            let size = min(max(baseItemSize * sizeVariation, minItemSize), maxItemSize)
+            
+            // 隨機初始位置
+            let position = CGPoint(
+                x: CGFloat.random(in: edgePadding + size/2...canvasSize.width - edgePadding - size/2),
+                y: CGFloat.random(in: edgePadding + size/2...canvasSize.height - edgePadding - size/2)
+            )
+            
+            // 隨機初始速度（超級緩慢優雅）
+            let velocity = CGPoint(
+                x: CGFloat.random(in: -0.5...0.5),
+                y: CGFloat.random(in: -0.5...0.5)
+            )
+            
+            // 隨機旋轉和旋轉速度
+            let rotation = Double.random(in: 0...360)
+            let rotationSpeed = Double.random(in: -2...2)
+            
+            newFloatingItems.append(FloatingItem(
+                item: item,
+                position: position,
+                velocity: velocity,
+                size: size,
+                rotation: rotation,
+                rotationSpeed: rotationSpeed
+            ))
+        }
+        
+        withAnimation(.easeInOut(duration: 0.5)) {
+            floatingItems = newFloatingItems
         }
     }
-
-    // MARK: - 拖移（含彈性邊界 + 慣性）
-    private func panGesture(viewSize: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                let raw = CGSize(width: lastDrag.width + value.translation.width,
-                                 height: lastDrag.height + value.translation.height)
-
-                // 邊界與 60pt 橡皮筋
-                let b = panBounds(in: viewSize)
-                let eased = rubberBand(raw, within: b, band: 60)
-                offset = eased
-            }
-            .onEnded { value in
-                // 以預測位移估出動量，做慣性目標點
-                let extra = CGSize(width: value.predictedEndTranslation.width - value.translation.width,
-                                   height: value.predictedEndTranslation.height - value.translation.height)
-
-                // 動量縮放係數（數字越大慣性越強）
-                let momentumScale: CGFloat = 0.25
-                let target = CGSize(width: offset.width + extra.width * momentumScale,
-                                    height: offset.height + extra.height * momentumScale)
-
-                // 收斂到合法邊界
-                let b = panBounds(in: viewSize)
-                let clamped = clamp(target, within: b)
-
-                withAnimation(.interpolatingSpring(stiffness: 220, damping: 28)) {
-                    offset = clamped
-                    lastDrag = clamped
+    
+    // MARK: - 開始動畫
+    private func startAnimation() {
+        guard animationTimer == nil else { return }
+        
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { _ in
+            updateFloatingItems()
+        }
+    }
+    
+    // MARK: - 暫停動畫
+    private func pauseAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+    
+    // MARK: - 停止動畫
+    private func stopAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+    
+    // MARK: - 更新物件位置
+    private func updateFloatingItems() {
+        withAnimation(.linear(duration: 1/60)) {
+            for index in floatingItems.indices {
+                var item = floatingItems[index]
+                
+                // 更新位置
+                item.position.x += item.velocity.x
+                item.position.y += item.velocity.y
+                
+                // 旋轉保持不變（不自動旋轉）
+                
+                // 邊界碰撞檢測與反彈（物理性反彈）
+                let halfSize = item.size / 2
+                let dampingFactor: CGFloat = 0.85  // 反彈時的能量衰減
+                
+                // 左右邊界
+                if item.position.x - halfSize <= edgePadding {
+                    item.position.x = edgePadding + halfSize
+                    item.velocity.x = abs(item.velocity.x) * dampingFactor // 反彈衰減
+                } else if item.position.x + halfSize >= canvasSize.width - edgePadding {
+                    item.position.x = canvasSize.width - edgePadding - halfSize
+                    item.velocity.x = -abs(item.velocity.x) * dampingFactor // 反彈衰減
                 }
+                
+                // 上下邊界
+                if item.position.y - halfSize <= edgePadding {
+                    item.position.y = edgePadding + halfSize
+                    item.velocity.y = abs(item.velocity.y) * dampingFactor // 反彈衰減
+                } else if item.position.y + halfSize >= canvasSize.height - edgePadding {
+                    item.position.y = canvasSize.height - edgePadding - halfSize
+                    item.velocity.y = -abs(item.velocity.y) * dampingFactor // 反彈衰減
+                }
+                
+                // 添加微小的空氣阻力，讓動畫更自然
+                item.velocity.x *= 0.9995
+                item.velocity.y *= 0.9995
+                
+                // 添加微小的隨機擾動，避免物件完全靜止
+                if abs(item.velocity.x) < 0.05 && abs(item.velocity.y) < 0.05 {
+                    item.velocity.x += CGFloat.random(in: -0.1...0.1)
+                    item.velocity.y += CGFloat.random(in: -0.1...0.1)
+                }
+                
+                floatingItems[index] = item
             }
-    }
-
-    // 依視窗與內容大小計算可平移邊界
-    private func panBounds(in viewSize: CGSize) -> (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
-        // 若內容比視窗小，min==max，代表不需要滾動；否則保留 edgePadding 的內距
-        let minX = min(edgePadding, viewSize.width - boardSize.width - edgePadding)
-        let maxX = edgePadding
-        let minY = min(edgePadding, viewSize.height - boardSize.height - edgePadding)
-        let maxY = edgePadding
-        return (minX, maxX, minY, maxY)
-    }
-
-    // 邊界內夾取
-    private func clamp(_ value: CGSize, within b: (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat)) -> CGSize {
-        CGSize(width: min(b.maxX, max(b.minX, value.width)),
-               height: min(b.maxY, max(b.minY, value.height)))
-    }
-
-    // 橡皮筋效果：超出邊界時放慢
-    private func rubberBand(_ value: CGSize, within b: (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat), band: CGFloat) -> CGSize {
-        func banded(_ v: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
-            if v < min {
-                let d = min - v
-                return min - band * log1p(d / band)
-            } else if v > max {
-                let d = v - max
-                return max + band * log1p(d / band)
-            }
-            return v
         }
-        return CGSize(width: banded(value.width, min: b.minX, max: b.maxX),
-                      height: banded(value.height, min: b.minY, max: b.maxY))
+    }
+    
+    // MARK: - 更新邊界（螢幕尺寸改變時）
+    private func updateBoundariesForItems() {
+        for index in floatingItems.indices {
+            let item = floatingItems[index]
+            let halfSize = item.size / 2
+            
+            // 確保物件在新的邊界內
+            let clampedX = max(edgePadding + halfSize,
+                              min(item.position.x, canvasSize.width - edgePadding - halfSize))
+            let clampedY = max(edgePadding + halfSize,
+                              min(item.position.y, canvasSize.height - edgePadding - halfSize))
+            
+            floatingItems[index].position = CGPoint(x: clampedX, y: clampedY)
+        }
     }
 }
 
+// MARK: - 漂浮物件數據結構
+struct FloatingItem {
+    let item: Item
+    var position: CGPoint
+    var velocity: CGPoint  // 移動速度
+    let size: CGFloat
+    var rotation: Double
+    let rotationSpeed: Double  // 旋轉速度
+}
 
-// MARK: - 白板內的單一物件（重新設計）
+// MARK: - 改進的物件格子（支持可變大小和旋轉）
 struct CanvasItemCell: View {
     let item: Item
     let imageLoader: ImageMemoryCache
+    let size: CGFloat
+    let rotation: Double
     @State private var image: UIImage?
     @State private var isPressed = false
     let onTap: (Item) -> Void
 
     var body: some View {
-        ZStack {
+        Group {
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 140, height: 140)
+                    .frame(width: size, height: size)
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(.systemGray6))
                     .overlay(
-                        ProgressView().scaleEffect(0.9)
+                        ProgressView().scaleEffect(0.8)
                     )
-                    .frame(width: 140, height: 140)
+                    .frame(width: size, height: size)
             }
         }
-        .frame(width: 160, height: 160) // 保持原本格子尺寸，方便對齊
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-        .onTapGesture { onTap(item) }
+        .frame(width: size, height: size)
+        .rotationEffect(.degrees(rotation))
+        .scaleEffect(isPressed ? 0.9 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+        .onTapGesture {
+            // 輕微的點擊回饋
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
+            onTap(item)
+        }
         .pressEvents(
             onPress: { isPressed = true },
             onRelease: { isPressed = false }
