@@ -176,7 +176,7 @@ struct ContentView: View {
                            Spacer()
                            CanvasTabToggle(selected: $pageMode)
                                .padding(.trailing, 20)
-                               .padding(.bottom, 24)
+                               .padding(.bottom, 28)
                        }
                    }
             }
@@ -538,7 +538,7 @@ struct CanvasTabToggle: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             // 左：Default
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
@@ -560,7 +560,7 @@ struct CanvasTabToggle: View {
             .accessibilityLabel("Canvas View")
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .background(
             Capsule()
                 .fill(.white)

@@ -45,7 +45,7 @@ struct CanvasBoardView: View {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             pauseAnimation()
                             quickLookItem = item
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                            withAnimation(.spring(response: 0.1, dampingFraction: 0.9)) {
                                 showQuickLook = true
                             }
                         },
@@ -212,7 +212,7 @@ struct CanvasItemCell: View {
     @State private var quickLookActive = false   // 目前是否正在顯示 QuickLook
 
     // 手感參數
-    private let holdThreshold: Double = 0.1
+    private let holdThreshold: Double = 0.05
     private let maxMove: CGFloat = 32
 
     var body: some View {
