@@ -17,6 +17,8 @@ class CategoryStore: ObservableObject {
         FileManager.documentsDirectory.appendingPathComponent("categories.json")
     }
 
+    private let iCloudSync = iCloudSyncManager()
+    
     init() {
         loadCategories()
 
@@ -54,15 +56,20 @@ class CategoryStore: ObservableObject {
         }
     }
 
-    private func saveCategories() {
-        do {
-            let data = try JSONEncoder().encode(categories)
-            try data.write(to: savePath, options: [.atomic])
-        } catch {
-            print("Failed to save categories: \(error)")
-        }
-    }
-
+    func saveCategories() {
+           do {
+               let data = try JSONEncoder().encode(categories)
+               try data.write(to: savePath)
+               
+               // 觸發 iCloud 同步
+               if iCloudSync.isEnabled {
+                   iCloudSync.manualSync()
+               }
+           } catch {
+               print("儲存分類失敗：\(error)")
+           }
+       }
+    
     private func loadCategories() {
         guard FileManager.default.fileExists(atPath: savePath.path) else { return }
         do {

@@ -88,7 +88,9 @@ struct ContentView: View {
     // 是否顯示 Edit Photo 頁 */
     @State private var pendingPhoto: PendingPhoto?
     // 用來驅動 sheet(item:)
-   
+    
+    @StateObject private var iCloudSync = iCloudSyncManager()
+    
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
 
     
@@ -327,34 +329,53 @@ struct ContentView: View {
     }
     
     private func saveItems() {
-        do {
-            let data = try JSONEncoder().encode(items)
-            try data.write(to: savePath)
-        } catch {
-            print("儲存失敗：\(error)")
+            do {
+                let data = try JSONEncoder().encode(items)
+                try data.write(to: savePath)
+                
+                // 如果啟用了 iCloud 同步，觸發同步
+                if iCloudSync.isEnabled {
+                    iCloudSync.manualSync()
+                }
+            } catch {
+                print("儲存失敗：\(error)")
+            }
         }
-    }
     
     private func loadItems() {
-        do {
-            let data = try Data(contentsOf: savePath)
-            var decoded = try JSONDecoder().decode([Item].self, from: data)
-            // ✅ 讀取舊資料後，規一化價錢，避免舊資料有 "$$"
-            decoded = decoded.map { item in
-                Item(
-                    id: item.id,
-                    imageName: item.imageName,
-                    brand: item.brand,
-                    category: item.category,
-                    name: item.name,
-                    price: normalizedPriceString(item.price),
-                    date: item.date
-                )
+            // 如果啟用了 iCloud 同步，先嘗試同步
+            if iCloudSync.isEnabled {
+                iCloudSync.manualSync()
+                // 稍等同步完成後再載入
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    loadItemsFromLocal()
+                }
+            } else {
+                loadItemsFromLocal()
             }
+        }
+    
+    private func loadItemsFromLocal() {
+            do {
+                let data = try Data(contentsOf: savePath)
+                var decoded = try JSONDecoder().decode([Item].self, from: data)
+                // ✅ 讀取舊資料後，規一化價錢，避免舊資料有 "$$"
+                decoded = decoded.map { item in
+                    Item(
+                        id: item.id,
+                        imageName: item.imageName,
+                        brand: item.brand,
+                        category: item.category,
+                        name: item.name,
+                        price: normalizedPriceString(item.price),
+                        date: item.date
+                    )
+                }
 
-            items = decoded
-        } catch {
-            print("讀取失敗或尚無資料：\(error)")
+                items = decoded
+            } catch {
+                print("讀取失敗或尚無資料：\(error)")
+            }
         }
     }
     
@@ -421,7 +442,7 @@ struct ContentView: View {
             return Double(cleaned) ?? 0
         }
     
-}
+
 
 
 
