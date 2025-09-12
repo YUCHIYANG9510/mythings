@@ -392,13 +392,19 @@ private extension AddItemView {
         if isFormValid() {
             guard let selectedImage else { return }
             
-            // 🔧 使用統一的檔名格式，並確保路徑正確
+            // ✅ 修正：使用統一的檔名格式，並確保路徑正確
             let itemId = existingItem?.id ?? UUID()
             let fileName = "\(itemId.uuidString).png"  // 統一格式：UUID.png
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileURL = documentsDir.appendingPathComponent(fileName)
+            
+            // ✅ 修正：使用 Images 子目錄，與其他組件保持一致
+            let fileURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
             
             do {
+                // ✅ 確保 Images 目錄存在
+                try FileManager.default.createDirectory(at: FileManager.imagesDirectory, 
+                                                      withIntermediateDirectories: true, 
+                                                      attributes: nil)
+                
                 // 🔧 確保有 PNG 資料
                 guard let imageData = selectedImage.pngData() else {
                     print("❌ Failed to convert image to PNG data")
@@ -406,18 +412,18 @@ private extension AddItemView {
                     return
                 }
                 
-                // 🔧 如果是編輯模式且檔名改變，刪除舊檔案
+                // ✅ 修正：如果是編輯模式且檔名改變，從 Images 目錄刪除舊檔案
                 if let existingItem = existingItem, existingItem.imageName != fileName {
-                    let oldFileURL = documentsDir.appendingPathComponent(existingItem.imageName)
+                    let oldFileURL = FileManager.imagesDirectory.appendingPathComponent(existingItem.imageName)
                     if FileManager.default.fileExists(atPath: oldFileURL.path) {
                         try? FileManager.default.removeItem(at: oldFileURL)
                         print("🗑️ Removed old image: \(existingItem.imageName)")
                     }
                 }
                 
-                // 🔧 寫入新檔案
+                // ✅ 修正：寫入新檔案到 Images 目錄
                 try imageData.write(to: fileURL)
-                print("💾 Saved image: \(fileName) (size: \(imageData.count) bytes)")
+                print("💾 Saved image to Images/: \(fileName) (size: \(imageData.count) bytes)")
                 
                 // 🔧 驗證檔案確實被寫入
                 if FileManager.default.fileExists(atPath: fileURL.path) {

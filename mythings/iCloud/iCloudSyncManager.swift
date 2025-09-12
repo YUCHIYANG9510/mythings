@@ -168,6 +168,8 @@ final class iCloudSyncManager: ObservableObject {
         if isEnabled { enableCloudSync() }
     }
 
+    
+    
     // MARK: - Public API
 
     func manualSync() {
@@ -567,5 +569,20 @@ final class iCloudSyncManager: ObservableObject {
         print("items.json exists: \(fm.fileExists(atPath: localItemsURL.path))")
         print("categories.json exists: \(fm.fileExists(atPath: localCategoriesURL.path))")
         print("=== End Debug ===")
+    }
+
+    // MARK: - Delete Sync
+    
+    /// 同步刪除操作到 iCloud
+    func syncDeletion(for itemId: UUID) async {
+        guard isEnabled else { return }
+        
+        do {
+            let rid = CKRecord.ID(recordName: "item-\(itemId.uuidString)")
+            try await privateDB.deleteRecord(withID: rid)
+            print("✅ Deleted item from iCloud: \(itemId)")
+        } catch {
+            print("❌ Failed to delete item from iCloud: \(error)")
+        }
     }
 }

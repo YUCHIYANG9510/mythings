@@ -8,11 +8,11 @@
 import SwiftUI
 
 // MARK: - 小工具：取 Images 資料夾路徑
+
 extension FileManager {
     static var imagesDirectory: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Images", isDirectory: true)
-        // 確保資料夾存在
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -39,17 +39,34 @@ final class ImageMemoryCache {
         cache.removeAllObjects()
     }
 
-    /// 從 Images 資料夾載入圖片
+    /// 從 Images 資料夾載入圖片（含防呆）
     func loadImage(named imageName: String, completion: @escaping (UIImage?) -> Void) {
-        if let cached = get(imageName) {
+        // 1) 避免空字串
+        let trimmed = imageName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { completion(nil); return }
+
+        // 2) 僅取檔名，避免整條 path
+        let fileName = (trimmed as NSString).lastPathComponent
+
+        if let cached = get(fileName) {
             completion(cached)
             return
         }
 
-        let fileURL = FileManager.imagesDirectory.appendingPathComponent(imageName)
+        let fileURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
+
         DispatchQueue.global(qos: .userInitiated).async {
+            // 3) 確保不是資料夾
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir),
+                  !isDir.boolValue
+            else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
             let img = UIImage(contentsOfFile: fileURL.path)
-            if let img { self.set(imageName, image: img) }
+            if let img { self.set(fileName, image: img) }
             DispatchQueue.main.async { completion(img) }
         }
     }

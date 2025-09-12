@@ -184,7 +184,12 @@ struct ContentView: View {
             }
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
-                case .settings: SettingsView(categoryStore: categoryStore)
+                case .settings: SettingsView(
+                    categoryStore: categoryStore,
+                    iCloudSync: iCloudSync,  // ✅ 傳入實例
+                    items: $items,
+                    saveItems: saveItems
+                )
                 }
             }
         }
@@ -451,32 +456,46 @@ struct ListItemImageView: View {
     let imageName: String
     @StateObject private var cacheManager = ImageCacheManager.shared
     @State private var image: UIImage?
+    @State private var isLoading = false
 
     var body: some View {
-        Group {
+        ZStack {
+            Color(.systemGray6)
+
             if let image {
-                ZStack {
-                    Color(.systemGray6)
-                    Image(uiImage: image).resizable().scaledToFit()
-                }
-                .frame(width: 80, height: 80)
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill) // 讓縮圖填滿
+                    .clipped()
+            } else if isLoading {
+                ProgressView()
             } else {
-                // 先畫骨架，避免佔位跳動
-                ZStack {
-                    Color(.systemGray6)
-                    ProgressView() // 或保留你的 photo 圖示
-                }
-                .frame(width: 80, height: 80)
+                // 空檔名或載入失敗時的佔位
+                Image(systemName: "photo")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.secondary)
             }
         }
+        .frame(width: 80, height: 80)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onAppear(perform: loadImage)
         .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
         .onChangeCompat(of: imageName) { loadImage() }
     }
 
     private func loadImage() {
-        ImageMemoryCache.shared.loadImage(named: imageName) { img in
+        // 防呆：只取檔名，避免整條路徑；空字串就顯示佔位不轉圈
+        let fileName = (imageName as NSString).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileName.isEmpty else {
+            self.image = nil
+            self.isLoading = false
+            return
+        }
+
+        isLoading = true
+        ImageMemoryCache.shared.loadImage(named: fileName) { img in
             self.image = img
+            self.isLoading = false
         }
     }
 }

@@ -127,8 +127,14 @@ struct ItemDetailView: View {
     }
 
     private func loadImage() {
-        let imagePath = FileManager.documentsDirectory.appendingPathComponent(item.imageName).path
-        image = UIImage(contentsOfFile: imagePath)
+        let fileName = (item.imageName as NSString).lastPathComponent
+        guard !fileName.isEmpty else {
+            image = nil
+            return
+        }
+        ImageMemoryCache.shared.loadImage(named: fileName) { img in
+            self.image = img
+        }
     }
     
     private func formattedPrice(from raw: String) -> String {
