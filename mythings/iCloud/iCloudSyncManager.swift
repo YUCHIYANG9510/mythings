@@ -1,14 +1,8 @@
 //
-//  iCloudSync.swift
+//  CloudKitSyncManager.swift
 //  mythings
 //
 //  Created by Designer on 2025/9/9.
-//
-
-
-//
-//  CloudKitSyncManager.swift
-//  mythings
 //
 
 import Foundation
@@ -17,15 +11,133 @@ import Combine
 import CloudKit
 import UIKit
 
-enum iCloudSyncStatus {
+// MARK: - Public Models you already have
+// NOTE: 需要你的專案已有 Item 型別如下（你先前有）：
+// struct Item: Identifiable, Codable {
+//     let id: UUID
+//     var imageName: String   // 僅存「檔名」，不要存整條 path
+//     var brand: String
+//     var category: String
+//     var name: String
+//     var price: String
+//     var date: Date?
+// }
+
+// MARK: - Sync status
+
+enum iCloudSyncStatus: Equatable {
     case idle
     case syncing
     case success
     case error(String)
+
+    static func == (lhs: iCloudSyncStatus, rhs: iCloudSyncStatus) -> Bool {
+        switch (lhs, rhs) {
+        case (.idle, .idle),
+             (.syncing, .syncing),
+             (.success, .success):
+            return true
+        case (.error(let a), .error(let b)):
+            return a == b
+        default:
+            return false
+        }
+    }
 }
 
+// MARK: - Single-flight gate (防重入)
+
+actor SyncGate {
+    private var isRunning = false
+    func runOnce(_ op: @escaping () async throws -> Void) async rethrows {
+        guard !isRunning else {
+            print("⚠️ Sync already in progress, skipping...")
+            return
+        }
+        isRunning = true
+        defer { isRunning = false }
+        try await op()
+    }
+}
+
+// MARK: - ImageStore：集中管理圖片路徑/存取（避免把資料夾當檔案）
+
+struct ImageStore {
+    let fm = FileManager.default
+    let documentsDir: URL
+    let imagesDir: URL
+
+    init() {
+        documentsDir = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        imagesDir = documentsDir.appendingPathComponent("Images", isDirectory: true)
+        try? fm.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+    }
+
+    /// 僅保留檔名，避免把整條路徑（甚至是 "Documents"）存進資料。
+    func sanitizedFileName(_ raw: String) -> String {
+        let last = (raw as NSString).lastPathComponent
+        // 防呆：若是空字串或「沒有副檔名」，補 .png
+        if last.isEmpty { return "" }
+        if (last as NSString).pathExtension.isEmpty {
+            return last + ".png"
+        }
+        return last
+    }
+
+    func fileURL(for fileName: String) -> URL {
+        imagesDir.appendingPathComponent(sanitizedFileName(fileName), isDirectory: false)
+    }
+
+    func ensureDirs() throws {
+        var isDir: ObjCBool = false
+        if !fm.fileExists(atPath: imagesDir.path, isDirectory: &isDir) || !isDir.boolValue {
+            try fm.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        }
+    }
+
+    func existsFile(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return fm.fileExists(atPath: url.path, isDirectory: &isDir) && !isDir.boolValue
+    }
+
+    func nonEmptyFile(_ url: URL) -> Bool {
+        guard existsFile(url),
+              let attr = try? fm.attributesOfItem(atPath: url.path),
+              let size = attr[.size] as? Int64, size > 0 else { return false }
+        return true
+    }
+
+    /// 為 CKAsset 準備臨時檔案（上傳期間檔案需存在）
+    func tempUploadURL(for id: UUID, ext: String) throws -> URL {
+        let tmpBase = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("Upload", isDirectory: true)
+        try? fm.createDirectory(at: tmpBase, withIntermediateDirectories: true)
+        return tmpBase.appendingPathComponent("\(id.uuidString).\(ext)", isDirectory: false)
+    }
+
+    /// 將來源檔複製到臨時位置，回傳 CKAsset
+    func assetForUpload(from source: URL, id: UUID) throws -> CKAsset {
+        let ext = (source.path as NSString).pathExtension.isEmpty ? "png" : (source.path as NSString).pathExtension
+        let dst = try tempUploadURL(for: id, ext: ext)
+        if fm.fileExists(atPath: dst.path) {
+            try? fm.removeItem(at: dst)
+        }
+        try fm.copyItem(at: source, to: dst)
+        return CKAsset(fileURL: dst)
+    }
+}
+
+// MARK: - Categories mirror
+
+private struct SimpleCategory: Codable, Identifiable, Equatable {
+    let id: UUID
+    var name: String
+}
+
+// MARK: - CloudKitSyncManager
+
 final class iCloudSyncManager: ObservableObject {
-    // MARK: Public state
+    // Public state
     @Published var syncStatus: iCloudSyncStatus = .idle
     @Published var lastSyncDate: Date?
     @Published var isEnabled: Bool {
@@ -35,46 +147,46 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    // MARK: Private
+    // Private
     private lazy var container = CKContainer(identifier: "iCloud.com.daisyyang.mythings.v2")
     private lazy var privateDB = container.privateCloudDatabase
-
     private var cancellables = Set<AnyCancellable>()
     private let fm = FileManager.default
+    private let gate = SyncGate()
+    private let imageStore = ImageStore()
 
-    private var documentsDir: URL {
-        fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
+    // Local files
+    private var documentsDir: URL { imageStore.documentsDir }
     private var localItemsURL: URL { documentsDir.appendingPathComponent("items.json") }
     private var localCategoriesURL: URL { documentsDir.appendingPathComponent("categories.json") }
-    private var localImagesDir: URL { documentsDir.appendingPathComponent("Images", isDirectory: true) }
+    private var localImagesDir: URL { imageStore.imagesDir }
 
-    // Local mirror models
-    private struct SimpleCategory: Codable, Identifiable, Equatable {
-        let id: UUID
-        var name: String
-    }
-
+    // Lifecycle
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "icloud.sync.enabled")
         self.lastSyncDate = UserDefaults.standard.object(forKey: "icloud.sync.lastDate") as? Date
         if isEnabled { enableCloudSync() }
     }
 
-    // MARK: Public API
+    // MARK: - Public API
+
     func manualSync() {
         guard isEnabled else { return }
-        Task { @MainActor in
-            syncStatus = .syncing
-            do {
-                try await runFullSync()
-                syncStatus = .success
-                updateLastSyncDate()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    self.syncStatus = .idle
+        Task {
+            await gate.runOnce {
+                await MainActor.run { self.syncStatus = .syncing }
+                do {
+                    try await self.runFullSync()
+                    await MainActor.run {
+                        self.syncStatus = .success
+                        self.updateLastSyncDate()
+                    }
+                    // 回到 idle（可選）
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await MainActor.run { self.syncStatus = .idle }
+                } catch {
+                    await MainActor.run { self.syncStatus = .error(error.localizedDescription) }
                 }
-            } catch {
-                syncStatus = .error(error.localizedDescription)
             }
         }
     }
@@ -83,11 +195,10 @@ final class iCloudSyncManager: ObservableObject {
         FileManager.default.ubiquityIdentityToken != nil
     }
 
-    // MARK: Enable/Disable
-    private func enableCloudSync() {
-        // 用同一個指定容器做檢查，避免拿到 default 容器
-        let container = self.container
+    // MARK: - Enable/Disable
 
+    private func enableCloudSync() {
+        let container = self.container
         print("=== CloudKit Debug Info ===")
         print("Container ID: \(container.containerIdentifier ?? "nil")")
         print("App Bundle ID: \(Bundle.main.bundleIdentifier ?? "nil")")
@@ -100,8 +211,7 @@ final class iCloudSyncManager: ObservableObject {
                     print("Error domain: \(nsError.domain)")
                     print("Error code: \(nsError.code)")
                     print("Error description: \(error.localizedDescription)")
-                    print("Error debug: \(nsError.debugDescription)")
-                    self?.syncStatus = .error("Debug: \(nsError.domain) - \(nsError.code)")
+                    self?.syncStatus = .error("\(nsError.domain) - \(nsError.code)")
                 } else {
                     print("Account status OK: \(status)")
                 }
@@ -113,60 +223,15 @@ final class iCloudSyncManager: ObservableObject {
         cancellables.removeAll()
     }
 
-    // MARK: Core Sync (push local → pull remote；以 updatedAt 做 LWW)
-    private func runFullSync() async throws {
-        print("=== Starting Full Sync ===")
-        do {
-            try ensureLocalFolders()
-            print("✓ Local folders ensured")
+    // MARK: - Local IO
 
-            // 載入本地資料（可能是空的）
-            let items = loadLocalItems() ?? []
-            let categories = loadLocalCategories() ?? []
-
-            print("Local items count: \(items.count)")
-            print("Local categories count: \(categories.count)")
-
-            // 只有當有資料時才推送
-            if !items.isEmpty {
-                try await pushItems(items)
-                print("✓ Items pushed")
-            }
-            if !categories.isEmpty {
-                try await pushCategories(categories)
-                print("✓ Categories pushed")
-            }
-
-            // 從雲端拉取資料
-            try await pullItems()
-            print("✓ Items pulled")
-
-            try await pullCategories()
-            print("✓ Categories pulled")
-
-        } catch {
-            print("❌ Sync failed: \(error)")
-            throw error
-        }
-    }
-
-    private func ensureLocalFolders() throws {
-        if !fm.fileExists(atPath: localImagesDir.path) {
-            try fm.createDirectory(at: localImagesDir, withIntermediateDirectories: true)
-        }
-    }
-
-    // MARK: Local IO
-    private func loadLocalItems() -> [Item]? {
-        guard FileManager.default.fileExists(atPath: localItemsURL.path) else {
-            print("items.json doesn't exist yet, returning empty array")
+    private func loadLocalItems() -> [Item] {
+        guard fm.fileExists(atPath: localItemsURL.path),
+              let data = try? Data(contentsOf: localItemsURL),
+              let items = try? JSONDecoder().decode([Item].self, from: data) else {
             return []
         }
-        guard let data = try? Data(contentsOf: localItemsURL) else {
-            print("Failed to read items.json")
-            return []
-        }
-        return (try? JSONDecoder().decode([Item].self, from: data)) ?? []
+        return items
     }
 
     private func saveLocalItems(_ items: [Item]) {
@@ -178,16 +243,13 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    private func loadLocalCategories() -> [SimpleCategory]? {
-        guard FileManager.default.fileExists(atPath: localCategoriesURL.path) else {
-            print("categories.json doesn't exist yet, returning empty array")
+    private func loadLocalCategories() -> [SimpleCategory] {
+        guard fm.fileExists(atPath: localCategoriesURL.path),
+              let data = try? Data(contentsOf: localCategoriesURL),
+              let cats = try? JSONDecoder().decode([SimpleCategory].self, from: data) else {
             return []
         }
-        guard let data = try? Data(contentsOf: localCategoriesURL) else {
-            print("Failed to read categories.json")
-            return []
-        }
-        return (try? JSONDecoder().decode([SimpleCategory].self, from: data)) ?? []
+        return cats
     }
 
     private func saveLocalCategories(_ cats: [SimpleCategory]) {
@@ -199,61 +261,135 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    // MARK: Push (Local → CloudKit) using continuations (SDK 相容)
-    private func pushItems(_ items: [Item]) async throws {
+    // MARK: - Core Sync
+
+    private func runFullSync() async throws {
+        print("=== Starting Full Sync ===")
+
+        try ensureLocalFolders()
+        print("✓ Local folders ensured")
+
+        // Pull → Push → Pull（降低衝突、確保一致）
+        print("📥 Pulling from cloud first...")
+        try await pullItems()
+        try await pullCategories()
+        print("✓ Cloud data pulled")
+
+        let items = loadLocalItems()
+        let cats = loadLocalCategories()
+
+        if !items.isEmpty {
+            try await pushItemsWithRetry(items)
+            print("✓ Items pushed")
+        }
+        if !cats.isEmpty {
+            try await pushCategoriesWithRetry(cats)
+            print("✓ Categories pushed")
+        }
+
+        try await pullItems()
+        try await pullCategories()
+        print("✓ Final sync completed")
+    }
+
+    // MARK: - Push with retry
+
+    private func pushItemsWithRetry(_ items: [Item]) async throws {
         for item in items {
-            let rid = CKRecord.ID(recordName: "item-\(item.id.uuidString)")
-            let record = try await fetchOrCreate(recordType: "Item", id: rid)
-
-            record["id"] = item.id.uuidString as CKRecordValue
-            record["brand"] = item.brand as CKRecordValue
-            record["category"] = item.category as CKRecordValue
-            record["name"] = item.name as CKRecordValue
-            record["price"] = item.price as CKRecordValue
-            if let d = item.date { record["date"] = d as CKRecordValue }
-            record["updatedAt"] = Date() as CKRecordValue
-
-            // ✅ 只有在檔案存在且不是資料夾時才上傳 CKAsset，避免 "Not a regular file"
-            let imageURL = localImagesDir.appendingPathComponent(item.imageName)
-            var isDir: ObjCBool = false
-            if !item.imageName.isEmpty,
-               fm.fileExists(atPath: imageURL.path, isDirectory: &isDir),
-               !isDir.boolValue {
-                record["image"] = CKAsset(fileURL: imageURL)
-            } else {
-                record["image"] = nil // 沒圖就不要帶
+            var attempts = 0
+            while true {
+                do {
+                    try await pushSingleItem(item)
+                    break
+                } catch let e as CKError where e.code == .serverRecordChanged && attempts < 2 {
+                    attempts += 1
+                    print("⚠️ serverRecordChanged, retry \(attempts) for \(item.name)")
+                    try await Task.sleep(nanoseconds: UInt64(400_000_000 * attempts))
+                } catch {
+                    throw error
+                }
             }
-
-            _ = try await dbSave(record)
         }
     }
 
-    private func pushCategories(_ categories: [SimpleCategory]) async throws {
+    private func pushCategoriesWithRetry(_ categories: [SimpleCategory]) async throws {
         for cat in categories {
-            let rid = CKRecord.ID(recordName: "category-\(cat.id.uuidString)")
-            let record = try await fetchOrCreate(recordType: "Category", id: rid)
-            record["id"] = cat.id.uuidString as CKRecordValue
-            record["name"] = cat.name as CKRecordValue
-            record["updatedAt"] = Date() as CKRecordValue
-            _ = try await dbSave(record)
+            var attempts = 0
+            while true {
+                do {
+                    try await pushSingleCategory(cat)
+                    break
+                } catch let e as CKError where e.code == .serverRecordChanged && attempts < 2 {
+                    attempts += 1
+                    print("⚠️ serverRecordChanged, retry \(attempts) for category \(cat.name)")
+                    try await Task.sleep(nanoseconds: UInt64(400_000_000 * attempts))
+                } catch {
+                    throw error
+                }
+            }
         }
     }
 
-    // MARK: Pull (CloudKit → Local) using recordMatchedBlock
+    // MARK: - Push one item
+
+    private func pushSingleItem(_ item: Item) async throws {
+        let rid = CKRecord.ID(recordName: "item-\(item.id.uuidString)")
+        let rec = try await fetchOrCreate(recordType: "Item", id: rid)
+
+        rec["id"] = item.id.uuidString as CKRecordValue
+        rec["brand"] = item.brand as CKRecordValue
+        rec["category"] = item.category as CKRecordValue
+        rec["name"] = item.name as CKRecordValue
+        rec["price"] = item.price as CKRecordValue
+        if let d = item.date { rec["date"] = d as CKRecordValue }
+        rec["updatedAt"] = Date() as CKRecordValue
+
+        // 圖片：僅使用檔名，組出正確 URL 並確認檔案存在且非空
+        if !item.imageName.isEmpty {
+            let fileName = imageStore.sanitizedFileName(item.imageName)
+            let imgURL = imageStore.fileURL(for: fileName)
+
+            if imageStore.nonEmptyFile(imgURL) {
+                let asset = try imageStore.assetForUpload(from: imgURL, id: item.id)
+                rec["image"] = asset
+                print("✅ Upload image \(fileName)")
+            } else {
+                print("⚠️ Missing or empty image file: \(imgURL.path)")
+                rec["image"] = nil
+            }
+        } else {
+            rec["image"] = nil
+        }
+
+        _ = try await dbSave(rec)
+    }
+
+    private func pushSingleCategory(_ category: SimpleCategory) async throws {
+        let rid = CKRecord.ID(recordName: "category-\(category.id.uuidString)")
+        let rec = try await fetchOrCreate(recordType: "Category", id: rid)
+        rec["id"] = category.id.uuidString as CKRecordValue
+        rec["name"] = category.name as CKRecordValue
+        rec["updatedAt"] = Date() as CKRecordValue
+        _ = try await dbSave(rec)
+    }
+
+    // MARK: - Pull
+
     private func pullItems() async throws {
         let query = CKQuery(recordType: "Item", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: true)]
 
         var all: [CKRecord] = []
-        var cursor: CKQueryOperation.Cursor? = nil
+        var cursor: CKQueryOperation.Cursor?
 
         repeat {
-            let page = try await performQuery(recordType: "Item", query: query, cursor: cursor)
+            let page = try await performQuery(query: query, cursor: cursor)
             all.append(contentsOf: page.records)
             cursor = page.cursor
         } while cursor != nil
 
-        var local = loadLocalItems() ?? []
+        var local = loadLocalItems()
+
         for r in all {
             guard
                 let idStr = r["id"] as? String,
@@ -265,20 +401,32 @@ final class iCloudSyncManager: ObservableObject {
             else { continue }
 
             let date = r["date"] as? Date
+            var finalImageName = ""
 
-            var downloadedName: String? = nil
-            if let asset = r["image"] as? CKAsset, let fileURL = asset.fileURL {
-                let targetURL = localImagesDir.appendingPathComponent(fileURL.lastPathComponent)
-                if !fm.fileExists(atPath: targetURL.path) {
-                    try? fm.copyItem(at: fileURL, to: targetURL)
+            if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
+                // 使用固定命名（uuid.png），只存檔名
+                finalImageName = "\(uuid.uuidString).png"
+                let target = imageStore.fileURL(for: finalImageName)
+
+                do {
+                    try imageStore.ensureDirs()
+                    if fm.fileExists(atPath: target.path) {
+                        try? fm.removeItem(at: target)
+                    }
+                    try fm.copyItem(at: cloudURL, to: target)
+                    print("✅ Downloaded image: \(finalImageName)")
+                    // 清掉快取（若有）
+                    ImageMemoryCache.shared.remove(finalImageName)
+                } catch {
+                    print("❌ Copy image failed: \(error)")
+                    finalImageName = "" // 沒有可用圖片
                 }
-                downloadedName = targetURL.lastPathComponent // ✅ 寫回本地檔名
             }
 
             if let idx = local.firstIndex(where: { $0.id == uuid }) {
                 local[idx] = Item(
                     id: uuid,
-                    imageName: downloadedName ?? local[idx].imageName, // ✅ 更新為下載到的檔名
+                    imageName: finalImageName.isEmpty ? local[idx].imageName : finalImageName,
                     brand: brand,
                     category: category,
                     name: name,
@@ -286,19 +434,20 @@ final class iCloudSyncManager: ObservableObject {
                     date: date
                 )
             } else {
-                let newItem = Item(
+                local.append(Item(
                     id: uuid,
-                    imageName: downloadedName ?? "", // ✅ 新增時就寫正確檔名（或空字串）
+                    imageName: finalImageName,
                     brand: brand,
                     category: category,
                     name: name,
                     price: price,
                     date: date
-                )
-                local.append(newItem)
+                ))
             }
         }
+
         saveLocalItems(local)
+        print("✅ Items pulled and saved: \(local.count)")
     }
 
     private func pullCategories() async throws {
@@ -306,15 +455,16 @@ final class iCloudSyncManager: ObservableObject {
         query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: true)]
 
         var all: [CKRecord] = []
-        var cursor: CKQueryOperation.Cursor? = nil
+        var cursor: CKQueryOperation.Cursor?
 
         repeat {
-            let page = try await performQuery(recordType: "Category", query: query, cursor: cursor)
+            let page = try await performQuery(query: query, cursor: cursor)
             all.append(contentsOf: page.records)
             cursor = page.cursor
         } while cursor != nil
 
-        var local = loadLocalCategories() ?? []
+        var local = loadLocalCategories()
+
         for r in all {
             guard
                 let idStr = r["id"] as? String,
@@ -328,10 +478,13 @@ final class iCloudSyncManager: ObservableObject {
                 local.append(.init(id: uuid, name: name))
             }
         }
+
         saveLocalCategories(local)
+        print("✅ Categories pulled and saved: \(local.count)")
     }
 
-    // MARK: CK helpers (continuations，避免 SDK 差異造成 await 錯)
+    // MARK: - CK helpers
+
     private func dbSave(_ record: CKRecord) async throws -> CKRecord {
         try await withCheckedThrowingContinuation { cont in
             privateDB.save(record) { saved, error in
@@ -353,33 +506,20 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func fetchOrCreate(recordType: String, id: CKRecord.ID) async throws -> CKRecord {
-        do {
-            return try await dbFetch(recordID: id)
-        } catch {
-            if let ck = error as? CKError, ck.code == .unknownItem {
-                return CKRecord(recordType: recordType, recordID: id)
-            }
-            throw error
+        do { return try await dbFetch(recordID: id) }
+        catch let ck as CKError where ck.code == .unknownItem {
+            return CKRecord(recordType: recordType, recordID: id)
         }
     }
 
-    private func performQuery(recordType: String, query: CKQuery, cursor: CKQueryOperation.Cursor?) async throws -> (records: [CKRecord], cursor: CKQueryOperation.Cursor?) {
+    private func performQuery(query: CKQuery, cursor: CKQueryOperation.Cursor?) async throws -> (records: [CKRecord], cursor: CKQueryOperation.Cursor?) {
         try await withCheckedThrowingContinuation { cont in
-            let op: CKQueryOperation = {
-                if let cursor { return CKQueryOperation(cursor: cursor) }
-                else { return CKQueryOperation(query: query) }
-            }()
+            let op: CKQueryOperation = (cursor != nil) ? CKQueryOperation(cursor: cursor!) : CKQueryOperation(query: query)
 
             var fetched: [CKRecord] = []
 
-            // iOS 15+ 推薦：recordMatchedBlock（取代 recordFetchedBlock）
-            op.recordMatchedBlock = { recordID, result in
-                switch result {
-                case .success(let record):
-                    fetched.append(record)
-                case .failure(let err):
-                    print("record \(recordID) failed: \(err)")
-                }
+            op.recordMatchedBlock = { _, result in
+                if case .success(let record) = result { fetched.append(record) }
             }
 
             op.queryResultBlock = { result in
@@ -398,5 +538,34 @@ final class iCloudSyncManager: ObservableObject {
     private func updateLastSyncDate() {
         lastSyncDate = Date()
         UserDefaults.standard.set(lastSyncDate, forKey: "icloud.sync.lastDate")
+    }
+
+    // MARK: - Folders / Debug
+
+    private func ensureLocalFolders() throws {
+        // iOS 會保證 Documents 存在；這裡只保證 Images
+        try imageStore.ensureDirs()
+        // 額外驗證 Images 可寫
+        guard fm.isWritableFile(atPath: localImagesDir.path) || !fm.fileExists(atPath: localImagesDir.path) else { return }
+    }
+
+    // 可在啟動時呼叫查看狀態
+    private func debugFileSystem() {
+        print("=== File System Debug ===")
+        print("Documents: \(documentsDir.path)")
+        print("Images: \(localImagesDir.path)")
+        var isDir: ObjCBool = false
+        print("Images exists: \(fm.fileExists(atPath: localImagesDir.path, isDirectory: &isDir)) isDir=\(isDir.boolValue)")
+        if let files = try? fm.contentsOfDirectory(atPath: localImagesDir.path) {
+            print("Images count: \(files.count)")
+            for f in files {
+                let p = localImagesDir.appendingPathComponent(f).path
+                let size = (try? fm.attributesOfItem(atPath: p)[.size] as? Int64) ?? 0
+                print(" - \(f) \(size) bytes")
+            }
+        }
+        print("items.json exists: \(fm.fileExists(atPath: localItemsURL.path))")
+        print("categories.json exists: \(fm.fileExists(atPath: localCategoriesURL.path))")
+        print("=== End Debug ===")
     }
 }

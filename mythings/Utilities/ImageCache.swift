@@ -7,7 +7,16 @@
 
 import SwiftUI
 
-
+// MARK: - 小工具：取 Images 資料夾路徑
+extension FileManager {
+    static var imagesDirectory: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Images", isDirectory: true)
+        // 確保資料夾存在
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+}
 
 final class ImageMemoryCache {
     static let shared = ImageMemoryCache()
@@ -22,7 +31,6 @@ final class ImageMemoryCache {
         cache.setObject(image, forKey: key as NSString)
     }
 
-    // ✅ 新增：移除單一 key 與清空
     func remove(_ key: String) {
         cache.removeObject(forKey: key as NSString)
     }
@@ -31,14 +39,16 @@ final class ImageMemoryCache {
         cache.removeAllObjects()
     }
 
+    /// 從 Images 資料夾載入圖片
     func loadImage(named imageName: String, completion: @escaping (UIImage?) -> Void) {
         if let cached = get(imageName) {
             completion(cached)
             return
         }
-        let path = FileManager.documentsDirectory.appendingPathComponent(imageName).path
+
+        let fileURL = FileManager.imagesDirectory.appendingPathComponent(imageName)
         DispatchQueue.global(qos: .userInitiated).async {
-            let img = UIImage(contentsOfFile: path)
+            let img = UIImage(contentsOfFile: fileURL.path)
             if let img { self.set(imageName, image: img) }
             DispatchQueue.main.async { completion(img) }
         }
@@ -49,7 +59,6 @@ class ImageCacheManager: ObservableObject {
     static let shared = ImageCacheManager()
     @Published var cacheInvalidationTrigger = UUID()
 
-    // ✅ 新增：可指定 imageName，順便把記憶體快取清掉
     func invalidateCache(for imageName: String? = nil) {
         if let name = imageName {
             ImageMemoryCache.shared.remove(name)
@@ -59,4 +68,3 @@ class ImageCacheManager: ObservableObject {
         cacheInvalidationTrigger = UUID()
     }
 }
-

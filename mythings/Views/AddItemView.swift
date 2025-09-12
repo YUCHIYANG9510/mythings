@@ -387,15 +387,61 @@ private extension AddItemView {
         return trimmed.hasPrefix("$") ? trimmed : "$" + trimmed
     }
 
-    func saveTapped() {
+    // 在 AddItemView 中修正 saveTapped 方法
+    private func saveTapped() {
         if isFormValid() {
             guard let selectedImage else { return }
-            let fileName = existingItem?.imageName ?? UUID().uuidString + ".png"
-            let fileURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
-            if let data = selectedImage.pngData() { try? data.write(to: fileURL) }
-
+            
+            // 🔧 使用統一的檔名格式，並確保路徑正確
+            let itemId = existingItem?.id ?? UUID()
+            let fileName = "\(itemId.uuidString).png"  // 統一格式：UUID.png
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileURL = documentsDir.appendingPathComponent(fileName)
+            
+            do {
+                // 🔧 確保有 PNG 資料
+                guard let imageData = selectedImage.pngData() else {
+                    print("❌ Failed to convert image to PNG data")
+                    showValidationAlert = true
+                    return
+                }
+                
+                // 🔧 如果是編輯模式且檔名改變，刪除舊檔案
+                if let existingItem = existingItem, existingItem.imageName != fileName {
+                    let oldFileURL = documentsDir.appendingPathComponent(existingItem.imageName)
+                    if FileManager.default.fileExists(atPath: oldFileURL.path) {
+                        try? FileManager.default.removeItem(at: oldFileURL)
+                        print("🗑️ Removed old image: \(existingItem.imageName)")
+                    }
+                }
+                
+                // 🔧 寫入新檔案
+                try imageData.write(to: fileURL)
+                print("💾 Saved image: \(fileName) (size: \(imageData.count) bytes)")
+                
+                // 🔧 驗證檔案確實被寫入
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                    if let fileSize = attributes?[.size] as? Int64 {
+                        print("✅ File verification passed: \(fileName) (\(fileSize) bytes)")
+                    } else {
+                        print("⚠️ File exists but size unknown: \(fileName)")
+                    }
+                } else {
+                    print("❌ File save failed: \(fileName)")
+                    showValidationAlert = true
+                    return
+                }
+                
+            } catch {
+                print("❌ Error saving image: \(error)")
+                showValidationAlert = true
+                return
+            }
+            
+            // 創建 Item 物件
             let item = Item(
-                id: existingItem?.id ?? UUID(),
+                id: itemId,
                 imageName: fileName,
                 brand: brand,
                 category: category,
@@ -403,13 +449,17 @@ private extension AddItemView {
                 price: priceWithDollar(price),
                 date: useDate ? selectedDate : nil
             )
-            ImageCacheManager.shared.invalidateCache()
+            
+            // 🔧 清除相關的圖片快取
+            ImageCacheManager.shared.invalidateCache(for: fileName)
+            
+            // 完成回調
             onComplete(item)
+            
         } else {
             showValidationAlert = true
         }
     }
-
     func isFormValid() -> Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
         !brand.trimmingCharacters(in: .whitespaces).isEmpty &&
