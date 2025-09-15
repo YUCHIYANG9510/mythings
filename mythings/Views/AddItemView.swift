@@ -361,27 +361,95 @@ private extension AddItemView {
 // MARK: - Logic
 private extension AddItemView {
     func configureInitialValues() {
-        if let item = existingItem {
-            name = item.name
-            brand = item.brand
-            category = item.category
-            price = item.price.replacingOccurrences(of: "$", with: "")
-            if let image = UIImage(contentsOfFile: FileManager.documentsDirectory
-                .appendingPathComponent(item.imageName).path) {
-                selectedImage = image
-            }
-            if let d = item.date {
-                useDate = true
-                selectedDate = d
-            } else {
+            if let item = existingItem {
+                name = item.name
+                brand = item.brand
+                category = item.category
+                price = item.price.replacingOccurrences(of: "$", with: "")
+
+                // ✅ 修正：編輯模式下，總是嘗試載入現有圖片
+                // 不管外部 selectedImage 是什麼狀態
+                if let img = loadImage(named: item.imageName) {
+                    selectedImage = img
+                    print("✅ Loaded existing image: \(item.imageName)")
+                } else {
+                    print("⚠️ Failed to load image: \(item.imageName)")
+                    // 可選：設置為 nil 確保顯示 "Tap to add image"
+                    selectedImage = nil
+                }
+
+                if let d = item.date {
+                    useDate = true
+                    selectedDate = d
+                } else {
+                    useDate = false
+                }
+            } else if !categoryStore.categories.isEmpty {
+                category = categoryStore.categories[0].name
                 useDate = false
             }
-        } else if !categoryStore.categories.isEmpty {
-            category = categoryStore.categories[0].name
-            useDate = false
         }
-    }
+    /// 優先從 Images/ 讀圖；若找不到，回退到 Documents/（舊版相容）
+    func loadImage(named fileName: String) -> UIImage? {
+           // ✅ 增加除錯資訊
+           print("🔍 Loading image: \(fileName)")
+           
+           // 新目錄（你現在的儲存位置）
+           let newURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
+           print("📂 Checking new path: \(newURL.path)")
+           
+           if FileManager.default.fileExists(atPath: newURL.path) {
+               print("✅ File exists at new path")
+               if let img = UIImage(contentsOfFile: newURL.path) {
+                   print("✅ Successfully loaded from new path")
+                   return img
+               } else {
+                   print("❌ Failed to create UIImage from new path")
+               }
+           } else {
+               print("❌ File not found at new path")
+           }
 
+           // 舊目錄（舊版資料還在 Documents 時）
+           let oldURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
+           print("📂 Checking old path: \(oldURL.path)")
+           
+           if FileManager.default.fileExists(atPath: oldURL.path) {
+               print("✅ File exists at old path")
+               if let img = UIImage(contentsOfFile: oldURL.path) {
+                   print("✅ Successfully loaded from old path")
+                   return img
+               } else {
+                   print("❌ Failed to create UIImage from old path")
+               }
+           } else {
+               print("❌ File not found at old path")
+           }
+
+           // 再退一步：如果舊資料沒有副檔名，嘗試加上 .png
+           if !fileName.lowercased().hasSuffix(".png") {
+               let withExt = fileName + ".png"
+               print("🔍 Trying with .png extension: \(withExt)")
+               
+               let newURL2 = FileManager.imagesDirectory.appendingPathComponent(withExt)
+               if FileManager.default.fileExists(atPath: newURL2.path),
+                  let img = UIImage(contentsOfFile: newURL2.path) {
+                   print("✅ Successfully loaded with .png from new path")
+                   return img
+               }
+               
+               let oldURL2 = FileManager.documentsDirectory.appendingPathComponent(withExt)
+               if FileManager.default.fileExists(atPath: oldURL2.path),
+                  let img = UIImage(contentsOfFile: oldURL2.path) {
+                   print("✅ Successfully loaded with .png from old path")
+                   return img
+               }
+           }
+
+           print("❌ All image loading attempts failed for: \(fileName)")
+           return nil
+       }
+    
     func priceWithDollar(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         return trimmed.hasPrefix("$") ? trimmed : "$" + trimmed

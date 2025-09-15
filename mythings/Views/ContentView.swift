@@ -264,7 +264,7 @@ struct ContentView: View {
 
         .sheet(item: $editingItem) { editing in
             AddItemView(
-                selectedImage: $selectedImage,
+                selectedImage: .constant(nil), // ✅ 修正：編輯模式下不預設圖片，讓 AddItemView 自己載入
                 existingItem: editing,
                 categoryStore: categoryStore,
                 brandStore: brandStore,
@@ -280,7 +280,7 @@ struct ContentView: View {
                 }
 
                 editingItem = nil
-                selectedImage = nil
+                // selectedImage = nil // ✅ 不需要設為 nil，因為傳入的是 .constant(nil)
                 saveItems()
             }
         }

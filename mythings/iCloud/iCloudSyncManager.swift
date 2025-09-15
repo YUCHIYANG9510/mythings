@@ -11,17 +11,6 @@ import Combine
 import CloudKit
 import UIKit
 
-// MARK: - Public Models you already have
-// NOTE: 需要你的專案已有 Item 型別如下（你先前有）：
-// struct Item: Identifiable, Codable {
-//     let id: UUID
-//     var imageName: String   // 僅存「檔名」，不要存整條 path
-//     var brand: String
-//     var category: String
-//     var name: String
-//     var price: String
-//     var date: Date?
-// }
 
 // MARK: - Sync status
 
@@ -216,6 +205,7 @@ final class iCloudSyncManager: ObservableObject {
         print("App Bundle ID: \(Bundle.main.bundleIdentifier ?? "nil")")
 
         container.accountStatus { [weak self] status, error in
+            guard let self = self else { return }   // 👈 在 closure 一開始就解開
             DispatchQueue.main.async {
                 print("Account status: \(status)")
                 if let error = error {
@@ -223,13 +213,14 @@ final class iCloudSyncManager: ObservableObject {
                     print("Error domain: \(nsError.domain)")
                     print("Error code: \(nsError.code)")
                     print("Error description: \(error.localizedDescription)")
-                    self?.syncStatus = .error("\(nsError.domain) - \(nsError.code)")
+                    self.syncStatus = .error("\(nsError.domain) - \(nsError.code)")
                 } else {
                     print("Account status OK: \(status)")
                 }
             }
         }
     }
+
 
     private func disableCloudSync() {
         // 取消目前同步任務（如果有）
