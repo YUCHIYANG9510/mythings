@@ -44,7 +44,16 @@ extension View {
     }
 }
 
-
+extension View {
+    @ViewBuilder
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
 
 struct PendingPhoto: Identifiable {
     let id = UUID()
@@ -246,8 +255,11 @@ struct ContentView: View {
                     saveItems()
                 }
             }
-            .presentationDetents([.fraction(0.7)])
-            .presentationCornerRadius(40)
+            .presentationDetents(UIDevice.isIPad ? [.large] : [.fraction(0.7)])
+            .presentationCornerRadius(UIDevice.isIPad ? 20 : 40)
+            .if(UIDevice.isIPad) { view in
+                view.presentationBackground(.regularMaterial)
+            }
         }
 
         .sheet(item: $editingItem) { editing in
