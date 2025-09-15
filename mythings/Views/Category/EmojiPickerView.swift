@@ -80,8 +80,12 @@ struct EmojiPickerView: View {
                
                HStack {
                    TextField("Type emoji here", text: $inputEmoji)
-                       .textFieldStyle(.roundedBorder)
-                       .font(.system(size: 20))
+                       .font(.system(size: 16))
+                       .padding(16)
+                       .background(
+                           RoundedRectangle(cornerRadius: 8, style: .continuous)
+                               .fill(Color(.systemGray6))  // 淺灰底色
+                       )
                    
                    Button("Use") {
                        if !inputEmoji.isEmpty {
@@ -91,7 +95,8 @@ struct EmojiPickerView: View {
                    }
                    .buttonStyle(.borderedProminent)
                    .disabled(inputEmoji.isEmpty)
-               }
+                   .padding(12)
+            }
            }
            .padding(.vertical, 12)
            .padding(.horizontal, 16)
@@ -101,3 +106,8 @@ struct EmojiPickerView: View {
            )
        }
    }
+
+
+#Preview {
+    EmojiPickerView(selected: .constant("🎮"))
+}
