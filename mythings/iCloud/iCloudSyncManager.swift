@@ -76,11 +76,8 @@ struct ImageStore {
     /// 僅保留檔名，避免把整條路徑（甚至是 "Documents"）存進資料。
     func sanitizedFileName(_ raw: String) -> String {
         let last = (raw as NSString).lastPathComponent
-        // 防呆：若是空字串或「沒有副檔名」，補 .png
         if last.isEmpty { return "" }
-        if (last as NSString).pathExtension.isEmpty {
-            return last + ".png"
-        }
+        if (last as NSString).pathExtension.isEmpty { return last + ".png" }
         return last
     }
 
@@ -119,9 +116,7 @@ struct ImageStore {
     func assetForUpload(from source: URL, id: UUID) throws -> CKAsset {
         let ext = (source.path as NSString).pathExtension.isEmpty ? "png" : (source.path as NSString).pathExtension
         let dst = try tempUploadURL(for: id, ext: ext)
-        if fm.fileExists(atPath: dst.path) {
-            try? fm.removeItem(at: dst)
-        }
+        if fm.fileExists(atPath: dst.path) { try? fm.removeItem(at: dst) }
         try fm.copyItem(at: source, to: dst)
         return CKAsset(fileURL: dst)
     }
@@ -135,7 +130,8 @@ private struct SimpleCategory: Codable, Identifiable, Equatable {
 }
 
 // MARK: - CloudKitSyncManager
-
+// ▶︎ A 版：整個類別掛主執行緒
+@MainActor
 final class iCloudSyncManager: ObservableObject {
     // Public state
     @Published var syncStatus: iCloudSyncStatus = .idle
@@ -161,6 +157,9 @@ final class iCloudSyncManager: ObservableObject {
     private var localCategoriesURL: URL { documentsDir.appendingPathComponent("categories.json") }
     private var localImagesDir: URL { imageStore.imagesDir }
 
+    // 追蹤目前同步任務（可取消）
+    private var currentSyncTask: Task<Void, Never>?
+
     // Lifecycle
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "icloud.sync.enabled")
@@ -168,14 +167,18 @@ final class iCloudSyncManager: ObservableObject {
         if isEnabled { enableCloudSync() }
     }
 
-    
-    
     // MARK: - Public API
 
     func manualSync() {
         guard isEnabled else { return }
-        Task {
+
+        // 若先前有任務在跑，先取消（交由 gate 防止重入）
+        currentSyncTask?.cancel()
+
+        currentSyncTask = Task { [weak self] in
+            guard let self else { return }
             await gate.runOnce {
+                // 這裡的 Published 變更需要在主執行緒
                 await MainActor.run { self.syncStatus = .syncing }
                 do {
                     try await self.runFullSync()
@@ -184,11 +187,18 @@ final class iCloudSyncManager: ObservableObject {
                         self.updateLastSyncDate()
                     }
                     // 回到 idle（可選）
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    await MainActor.run { self.syncStatus = .idle }
+                } catch is CancellationError {
                     await MainActor.run { self.syncStatus = .idle }
                 } catch {
                     await MainActor.run { self.syncStatus = .error(error.localizedDescription) }
                 }
+            }
+
+            // 任務結束後清空引用
+            if !Task.isCancelled {
+                await MainActor.run { [weak self] in self?.currentSyncTask = nil }
             }
         }
     }
@@ -222,7 +232,15 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func disableCloudSync() {
+        // 取消目前同步任務（如果有）
+        currentSyncTask?.cancel()
+        currentSyncTask = nil
+
+        // 若你有任何訂閱/通知，這裡也一起解除
         cancellables.removeAll()
+
+        // 將狀態歸零，避免 UI 還顯示「正在同步」
+        syncStatus = .idle
     }
 
     // MARK: - Local IO
@@ -268,28 +286,37 @@ final class iCloudSyncManager: ObservableObject {
     private func runFullSync() async throws {
         print("=== Starting Full Sync ===")
 
+        try Task.checkCancellation()
+
         try ensureLocalFolders()
         print("✓ Local folders ensured")
 
-        // Pull → Push → Pull（降低衝突、確保一致）
+        // Pull → Push → Pull
         print("📥 Pulling from cloud first...")
+        try Task.checkCancellation()
         try await pullItems()
+        try Task.checkCancellation()
         try await pullCategories()
         print("✓ Cloud data pulled")
 
+        try Task.checkCancellation()
         let items = loadLocalItems()
         let cats = loadLocalCategories()
 
         if !items.isEmpty {
+            try Task.checkCancellation()
             try await pushItemsWithRetry(items)
             print("✓ Items pushed")
         }
         if !cats.isEmpty {
+            try Task.checkCancellation()
             try await pushCategoriesWithRetry(cats)
             print("✓ Categories pushed")
         }
 
+        try Task.checkCancellation()
         try await pullItems()
+        try Task.checkCancellation()
         try await pullCategories()
         print("✓ Final sync completed")
     }
@@ -298,6 +325,7 @@ final class iCloudSyncManager: ObservableObject {
 
     private func pushItemsWithRetry(_ items: [Item]) async throws {
         for item in items {
+            try Task.checkCancellation()
             var attempts = 0
             while true {
                 do {
@@ -305,7 +333,6 @@ final class iCloudSyncManager: ObservableObject {
                     break
                 } catch let e as CKError where e.code == .serverRecordChanged && attempts < 2 {
                     attempts += 1
-                    print("⚠️ serverRecordChanged, retry \(attempts) for \(item.name)")
                     try await Task.sleep(nanoseconds: UInt64(400_000_000 * attempts))
                 } catch {
                     throw error
@@ -316,6 +343,7 @@ final class iCloudSyncManager: ObservableObject {
 
     private func pushCategoriesWithRetry(_ categories: [SimpleCategory]) async throws {
         for cat in categories {
+            try Task.checkCancellation()
             var attempts = 0
             while true {
                 do {
@@ -412,9 +440,7 @@ final class iCloudSyncManager: ObservableObject {
 
                 do {
                     try imageStore.ensureDirs()
-                    if fm.fileExists(atPath: target.path) {
-                        try? fm.removeItem(at: target)
-                    }
+                    if fm.fileExists(atPath: target.path) { try? fm.removeItem(at: target) }
                     try fm.copyItem(at: cloudURL, to: target)
                     print("✅ Downloaded image: \(finalImageName)")
                     // 清掉快取（若有）
@@ -576,7 +602,6 @@ final class iCloudSyncManager: ObservableObject {
     /// 同步刪除操作到 iCloud
     func syncDeletion(for itemId: UUID) async {
         guard isEnabled else { return }
-        
         do {
             let rid = CKRecord.ID(recordName: "item-\(itemId.uuidString)")
             try await privateDB.deleteRecord(withID: rid)

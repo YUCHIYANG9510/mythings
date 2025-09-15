@@ -8,6 +8,8 @@
 import Foundation
 import SwiftUI
 
+// ▶︎ 讓整個 Store 掛主執行緒，與 UI/Sync Manager 一致
+@MainActor
 class CategoryStore: ObservableObject {
     @Published var categories: [Category] = [] {
         didSet { saveCategories() }
@@ -17,9 +19,12 @@ class CategoryStore: ObservableObject {
         FileManager.documentsDirectory.appendingPathComponent("categories.json")
     }
 
-    private let iCloudSync = iCloudSyncManager()
-    
-    init() {
+    // ✅ 依賴注入：共用同一個 iCloudSyncManager（不要在這裡 new）
+    private let iCloudSync: iCloudSyncManager
+
+    // ✅ 由外部傳入 iCloudSync（例如在 App/Settings 建立後注入）
+    init(iCloudSync: iCloudSyncManager) {
+        self.iCloudSync = iCloudSync
         loadCategories()
 
         // 預設分類（僅在無資料時）
@@ -36,6 +41,11 @@ class CategoryStore: ObservableObject {
         }
     }
 
+    // 如果你在其他地方用到無參數 init()，保留一個便利建構子：
+    convenience init() {
+        self.init(iCloudSync: iCloudSyncManager())
+    }
+
     // ✅ 新介面：直接用 emoji
     func addCategory(name: String, emoji: String) {
         let newCategory = Category(name: name, emoji: emoji)
@@ -49,7 +59,7 @@ class CategoryStore: ObservableObject {
     func moveCategory(from source: IndexSet, to destination: Int) {
         categories.move(fromOffsets: source, toOffset: destination)
     }
-    
+
     func updateCategory(category: Category) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
             categories[index] = category
@@ -57,19 +67,19 @@ class CategoryStore: ObservableObject {
     }
 
     func saveCategories() {
-           do {
-               let data = try JSONEncoder().encode(categories)
-               try data.write(to: savePath)
-               
-               // 觸發 iCloud 同步
-               if iCloudSync.isEnabled {
-                   iCloudSync.manualSync()
-               }
-           } catch {
-               print("儲存分類失敗：\(error)")
-           }
-       }
-    
+        do {
+            let data = try JSONEncoder().encode(categories)
+            try data.write(to: savePath)
+
+            // 觸發 iCloud 同步（這裡在 MainActor，因此可直接呼叫）
+            if iCloudSync.isEnabled {
+                iCloudSync.manualSync()
+            }
+        } catch {
+            print("儲存分類失敗：\(error)")
+        }
+    }
+
     private func loadCategories() {
         guard FileManager.default.fileExists(atPath: savePath.path) else { return }
         do {

@@ -186,10 +186,10 @@ struct ContentView: View {
                 switch target {
                 case .settings: SettingsView(
                     categoryStore: categoryStore,
-                    iCloudSync: iCloudSync,  // ✅ 傳入實例
                     items: $items,
                     saveItems: saveItems
                 )
+
                 }
             }
         }
@@ -465,8 +465,7 @@ struct ListItemImageView: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill) // 讓縮圖填滿
-                    .clipped()
+                    .scaledToFit()
             } else if isLoading {
                 ProgressView()
             } else {
