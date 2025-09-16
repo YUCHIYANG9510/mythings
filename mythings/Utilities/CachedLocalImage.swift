@@ -50,8 +50,12 @@ struct CachedLocalImage: View {
         .background(Color.black.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onAppear(perform: load)
-        .onChange(of: cacheMgr.cacheInvalidationTrigger) { _ in reload() }
-        .onChange(of: imageName) { _ in reload() }
+        .onChange(of: cacheMgr.cacheInvalidationTrigger) {
+            reload()
+        }
+        .onChange(of: imageName) {
+            reload()
+        }
     }
 
     private func load() {
