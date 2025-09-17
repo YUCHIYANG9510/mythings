@@ -110,6 +110,7 @@ final class iCloudSyncManager: ObservableObject {
     // Public state
     @Published var syncStatus: iCloudSyncStatus = .idle
     @Published var lastSyncDate: Date?
+    @Published private(set) var supportsOrderIndex: Bool = false
     @Published var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "icloud.sync.enabled")
@@ -141,6 +142,7 @@ final class iCloudSyncManager: ObservableObject {
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "icloud.sync.enabled")
         self.lastSyncDate = UserDefaults.standard.object(forKey: "icloud.sync.lastDate") as? Date
+        self.supportsOrderIndex = UserDefaults.standard.bool(forKey: "icloud.schema.orderIndex")
         if isEnabled { enableCloudSync() }
         // 開 app 後稍等一下再嘗試啟動一次，避免網路/iCloud 尚未就緒
         Task { [weak self] in
@@ -216,11 +218,30 @@ final class iCloudSyncManager: ObservableObject {
                     // 等 300ms 讓 iCloud/網路就緒，再觸發
                     Task { [weak self] in
                             try? await Task.sleep(nanoseconds: 300_000_000)
+                            await self?.detectOrderIndexSupport()
                             await MainActor.run { [weak self] in
                                 self?.kickoffIfNeeded()
                             }
                         }
                 }
+            }
+        }
+    }
+
+    // 嘗試偵測 CloudKit 是否已建立 orderIndex 欄位（Item/Category 皆需要）。
+    private func detectOrderIndexSupport() async {
+        do {
+            let q = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
+            q.sortDescriptors = [NSSortDescriptor(key: "orderIndex", ascending: true)]
+            _ = try await performQuery(query: q, cursor: nil)
+            await MainActor.run {
+                self.supportsOrderIndex = true
+                UserDefaults.standard.set(true, forKey: "icloud.schema.orderIndex")
+            }
+        } catch {
+            await MainActor.run {
+                self.supportsOrderIndex = false
+                UserDefaults.standard.set(false, forKey: "icloud.schema.orderIndex")
             }
         }
     }
@@ -312,12 +333,13 @@ final class iCloudSyncManager: ObservableObject {
     // MARK: - Push with retry
 
     private func pushItemsWithRetry(_ items: [Item]) async throws {
-        for item in items {
+        for (index, item) in items.enumerated() {
             try Task.checkCancellation()
             var attempts = 0
             while true {
                 do {
-                    try await pushSingleItem(item)
+                    let ord = supportsOrderIndex ? index : 0
+                    try await pushSingleItem(item, orderIndex: ord)
                     break
                 } catch let e as CKError where e.code == .serverRecordChanged && attempts < 2 {
                     attempts += 1
@@ -333,12 +355,13 @@ final class iCloudSyncManager: ObservableObject {
         // 在推送前先做一次雲端清理：把不在本機名單內的同名分類刪除，多餘重複也清掉
         try await cleanupAndDeleteRemoteCategories(notInLocal: Set(categories.map { normalizeCategoryKey($0.name) }))
 
-        for cat in categories {
+        for (index, cat) in categories.enumerated() {
             try Task.checkCancellation()
             var attempts = 0
             while true {
                 do {
-                    try await pushSingleCategory(cat)
+                    let ord = supportsOrderIndex ? index : 0
+                    try await pushSingleCategory(cat, orderIndex: ord)
                     break
                 } catch let e as CKError where e.code == .serverRecordChanged && attempts < 2 {
                     attempts += 1
@@ -353,7 +376,7 @@ final class iCloudSyncManager: ObservableObject {
 
     // MARK: - Push one item
 
-    private func pushSingleItem(_ item: Item) async throws {
+    private func pushSingleItem(_ item: Item, orderIndex: Int) async throws {
         let rid = CKRecord.ID(recordName: "item-\(item.id.uuidString)")
         let rec = try await fetchOrCreate(recordType: "Item", id: rid)
 
@@ -364,6 +387,7 @@ final class iCloudSyncManager: ObservableObject {
         rec["price"] = item.price as CKRecordValue
         if let d = item.date { rec["date"] = d as CKRecordValue }
         rec["updatedAt"] = Date() as CKRecordValue
+        rec["orderIndex"] = NSNumber(value: orderIndex)
 
         if !item.imageName.isEmpty {
             let fileName = imageStore.sanitizedFileName(item.imageName)
@@ -384,7 +408,7 @@ final class iCloudSyncManager: ObservableObject {
         _ = try await dbSave(rec)
     }
 
-    private func pushSingleCategory(_ category: Category) async throws {
+    private func pushSingleCategory(_ category: Category, orderIndex: Int) async throws {
         // 以名稱作為唯一鍵，避免兩裝置產生不同 UUID 而重複
         let key = normalizeCategoryKey(category.name)
         let rid = CKRecord.ID(recordName: "category-name-\(key)")
@@ -393,6 +417,7 @@ final class iCloudSyncManager: ObservableObject {
         rec["name"] = category.name as CKRecordValue
         if !category.emoji.isEmpty { rec["emoji"] = category.emoji as CKRecordValue } else { rec["emoji"] = nil }
         rec["updatedAt"] = Date() as CKRecordValue
+        rec["orderIndex"] = NSNumber(value: orderIndex)
         _ = try await dbSave(rec)
     }
 
@@ -400,7 +425,14 @@ final class iCloudSyncManager: ObservableObject {
 
     private func pullItems() async throws {
         let query = CKQuery(recordType: "Item", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: true)]
+        if supportsOrderIndex {
+            query.sortDescriptors = [
+                NSSortDescriptor(key: "orderIndex", ascending: true),
+                NSSortDescriptor(key: "updatedAt", ascending: false)
+            ]
+        } else {
+            query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: false)]
+        }
 
         var all: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
@@ -412,6 +444,7 @@ final class iCloudSyncManager: ObservableObject {
         } while cursor != nil
 
         var local = loadLocalItems()
+        var cloudOrder: [(UUID, Int)] = []
 
         for r in all {
             guard
@@ -424,6 +457,7 @@ final class iCloudSyncManager: ObservableObject {
             else { continue }
 
             let date = r["date"] as? Date
+            let orderIdx = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
             var finalImageName = ""
 
             if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -463,6 +497,19 @@ final class iCloudSyncManager: ObservableObject {
                     date: date
                 ))
             }
+
+            if let orderIdx { cloudOrder.append((uuid, orderIdx)) }
+        }
+
+        // 依 orderIndex 排序（若缺失則以日期降序）
+        if supportsOrderIndex && !cloudOrder.isEmpty {
+            let orderMap = Dictionary(uniqueKeysWithValues: cloudOrder)
+            local.sort { (a, b) -> Bool in
+                let ia = orderMap[a.id] ?? Int.max
+                let ib = orderMap[b.id] ?? Int.max
+                if ia != ib { return ia < ib }
+                return (a.date ?? .distantPast) > (b.date ?? .distantPast)
+            }
         }
 
         saveLocalItems(local)
@@ -471,7 +518,14 @@ final class iCloudSyncManager: ObservableObject {
 
     private func pullCategories() async throws {
         let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: true)]
+        if supportsOrderIndex {
+            query.sortDescriptors = [
+                NSSortDescriptor(key: "orderIndex", ascending: true),
+                NSSortDescriptor(key: "updatedAt", ascending: false)
+            ]
+        } else {
+            query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: false)]
+        }
 
         var all: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
@@ -485,7 +539,7 @@ final class iCloudSyncManager: ObservableObject {
         var local = loadLocalCategories()
 
         // 暫存依名稱去重：保留最新 updatedAt 的一筆
-        var nameToBest: [String: (Category, Date?, CKRecord.ID)] = [:]
+        var nameToBest: [String: (Category, Date?, CKRecord.ID, Int?)] = [:]
         for r in all {
             guard
                 let idStr = r["id"] as? String,
@@ -495,6 +549,7 @@ final class iCloudSyncManager: ObservableObject {
 
             let emoji = (r["emoji"] as? String) ?? ""
             let updatedAt = r["updatedAt"] as? Date
+            let ord = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
             let key = normalizeCategoryKey(name)
 
             let candidate = Category(id: uuid, name: name, emoji: emoji)
@@ -502,10 +557,10 @@ final class iCloudSyncManager: ObservableObject {
                 let existingDate = exist.1 ?? .distantPast
                 let newDate = updatedAt ?? .distantPast
                 if newDate >= existingDate {
-                    nameToBest[key] = (candidate, updatedAt, r.recordID)
+                    nameToBest[key] = (candidate, updatedAt, r.recordID, ord)
                 }
             } else {
-                nameToBest[key] = (candidate, updatedAt, r.recordID)
+                nameToBest[key] = (candidate, updatedAt, r.recordID, ord)
             }
         }
 
@@ -517,7 +572,17 @@ final class iCloudSyncManager: ObservableObject {
         var usedIds = Set<UUID>()
 
         // 先放入雲端的唯一集合
-        for (_, value) in nameToBest {
+        // 依 orderIndex 與 updatedAt 決定順序
+        let ordered = nameToBest.values.sorted { a, b in
+            let ia = a.3 ?? Int.max
+            let ib = b.3 ?? Int.max
+            if ia != ib { return ia < ib }
+            let da = a.1 ?? .distantPast
+            let db = b.1 ?? .distantPast
+            if da != db { return da > db }
+            return a.0.name.lowercased() < b.0.name.lowercased()
+        }
+        for value in ordered {
             merged.append(value.0)
             usedIds.insert(value.0.id)
         }
@@ -531,8 +596,7 @@ final class iCloudSyncManager: ObservableObject {
             }
         }
 
-        // 排序：名字排序，穩定輸出
-        merged.sort { $0.name.lowercased() < $1.name.lowercased() }
+        // 已依 orderIndex 合併排序，無需額外排序
 
         saveLocalCategories(merged)
         print("✅ Categories pulled and saved: \(merged.count)")
