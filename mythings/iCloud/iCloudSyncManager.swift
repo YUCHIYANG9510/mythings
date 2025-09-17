@@ -102,10 +102,7 @@ struct ImageStore {
     }
 }
 
-private struct SimpleCategory: Codable, Identifiable, Equatable {
-    let id: UUID
-    var name: String
-}
+// 不再使用簡化的 SimpleCategory；改用專案內的 Category（含 emoji）
 
 // MARK: - CloudKitSyncManager
 @MainActor
@@ -134,6 +131,11 @@ final class iCloudSyncManager: ObservableObject {
     private var localImagesDir: URL { imageStore.imagesDir }
 
     private var currentSyncTask: Task<Void, Never>?
+
+    // 正規化分類名稱作為唯一 Key（避免同名多筆）
+    private func normalizeCategoryKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 
     // Lifecycle
     init() {
@@ -250,16 +252,16 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    private func loadLocalCategories() -> [SimpleCategory] {
+    private func loadLocalCategories() -> [Category] {
         guard fm.fileExists(atPath: localCategoriesURL.path),
               let data = try? Data(contentsOf: localCategoriesURL),
-              let cats = try? JSONDecoder().decode([SimpleCategory].self, from: data) else {
+              let cats = try? JSONDecoder().decode([Category].self, from: data) else {
             return []
         }
         return cats
     }
 
-    private func saveLocalCategories(_ cats: [SimpleCategory]) {
+    private func saveLocalCategories(_ cats: [Category]) {
         do {
             let data = try JSONEncoder().encode(cats)
             try data.write(to: localCategoriesURL, options: .atomic)
@@ -327,7 +329,10 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    private func pushCategoriesWithRetry(_ categories: [SimpleCategory]) async throws {
+    private func pushCategoriesWithRetry(_ categories: [Category]) async throws {
+        // 在推送前先做一次雲端清理：把不在本機名單內的同名分類刪除，多餘重複也清掉
+        try await cleanupAndDeleteRemoteCategories(notInLocal: Set(categories.map { normalizeCategoryKey($0.name) }))
+
         for cat in categories {
             try Task.checkCancellation()
             var attempts = 0
@@ -379,11 +384,14 @@ final class iCloudSyncManager: ObservableObject {
         _ = try await dbSave(rec)
     }
 
-    private func pushSingleCategory(_ category: SimpleCategory) async throws {
-        let rid = CKRecord.ID(recordName: "category-\(category.id.uuidString)")
+    private func pushSingleCategory(_ category: Category) async throws {
+        // 以名稱作為唯一鍵，避免兩裝置產生不同 UUID 而重複
+        let key = normalizeCategoryKey(category.name)
+        let rid = CKRecord.ID(recordName: "category-name-\(key)")
         let rec = try await fetchOrCreate(recordType: "Category", id: rid)
         rec["id"] = category.id.uuidString as CKRecordValue
         rec["name"] = category.name as CKRecordValue
+        if !category.emoji.isEmpty { rec["emoji"] = category.emoji as CKRecordValue } else { rec["emoji"] = nil }
         rec["updatedAt"] = Date() as CKRecordValue
         _ = try await dbSave(rec)
     }
@@ -476,6 +484,8 @@ final class iCloudSyncManager: ObservableObject {
 
         var local = loadLocalCategories()
 
+        // 暫存依名稱去重：保留最新 updatedAt 的一筆
+        var nameToBest: [String: (Category, Date?, CKRecord.ID)] = [:]
         for r in all {
             guard
                 let idStr = r["id"] as? String,
@@ -483,15 +493,162 @@ final class iCloudSyncManager: ObservableObject {
                 let name = r["name"] as? String
             else { continue }
 
-            if let idx = local.firstIndex(where: { $0.id == uuid }) {
-                local[idx].name = name
+            let emoji = (r["emoji"] as? String) ?? ""
+            let updatedAt = r["updatedAt"] as? Date
+            let key = normalizeCategoryKey(name)
+
+            let candidate = Category(id: uuid, name: name, emoji: emoji)
+            if let exist = nameToBest[key] {
+                let existingDate = exist.1 ?? .distantPast
+                let newDate = updatedAt ?? .distantPast
+                if newDate >= existingDate {
+                    nameToBest[key] = (candidate, updatedAt, r.recordID)
+                }
             } else {
-                local.append(.init(id: uuid, name: name))
+                nameToBest[key] = (candidate, updatedAt, r.recordID)
             }
         }
 
-        saveLocalCategories(local)
-        print("✅ Categories pulled and saved: \(local.count)")
+        // 雲端清理：刪除同名的舊紀錄（保留最新），並刪除非標準鍵（舊 UUID 型）重複
+        try await cleanupDuplicateCategoryRecords(allRecords: all, keepKeys: Set(nameToBest.values.map { $0.2 }))
+
+        // 將雲端（去重後）合併進本地：同名以雲端為準；不同名保留本地
+        var merged: [Category] = []
+        var usedIds = Set<UUID>()
+
+        // 先放入雲端的唯一集合
+        for (_, value) in nameToBest {
+            merged.append(value.0)
+            usedIds.insert(value.0.id)
+        }
+
+        // 加入本地那些雲端沒有同名的一筆
+        let cloudNameSet = Set(nameToBest.keys)
+        for lc in local {
+            let key = lc.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !cloudNameSet.contains(key) && !usedIds.contains(lc.id) {
+                merged.append(lc)
+            }
+        }
+
+        // 排序：名字排序，穩定輸出
+        merged.sort { $0.name.lowercased() < $1.name.lowercased() }
+
+        saveLocalCategories(merged)
+        print("✅ Categories pulled and saved: \(merged.count)")
+    }
+
+    // 刪除同名重複與舊格式鍵的分類紀錄，只保留一筆最新的（傳入要保留的 RecordID 集合）
+    private func cleanupDuplicateCategoryRecords(allRecords: [CKRecord], keepKeys: Set<CKRecord.ID>) async throws {
+        var toDelete: [CKRecord.ID] = []
+        for r in allRecords {
+            let id = r.recordID
+            if !keepKeys.contains(id) {
+                // 若不是被選中的最新一筆，刪掉；另外，舊的 UUID 型 recordName 也刪
+                if id.recordName.hasPrefix("category-") && !id.recordName.hasPrefix("category-name-") {
+                    toDelete.append(id)
+                } else if !keepKeys.contains(id) {
+                    toDelete.append(id)
+                }
+            }
+        }
+        if !toDelete.isEmpty {
+            try await deleteRecordsInBatches(ids: Array(Set(toDelete)))
+        }
+    }
+
+    // 刪除雲端中「不在本機名稱集合內」的分類，並去除同名重複
+    private func cleanupAndDeleteRemoteCategories(notInLocal localNameKeys: Set<String>) async throws {
+        let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
+        var all: [CKRecord] = []
+        var cursor: CKQueryOperation.Cursor?
+        repeat {
+            let page = try await performQuery(query: query, cursor: cursor)
+            all.append(contentsOf: page.records)
+            cursor = page.cursor
+        } while cursor != nil
+
+        // 分組 by key，保留最新
+        var grouped: [String: [(CKRecord, Date?)]] = [:]
+        for r in all {
+            guard let name = r["name"] as? String else { continue }
+            let key = normalizeCategoryKey(name)
+            let updatedAt = r["updatedAt"] as? Date
+            grouped[key, default: []].append((r, updatedAt))
+        }
+
+        var toDelete: [CKRecord.ID] = []
+        for (key, list) in grouped {
+            // 不在本機名稱集合 → 全刪
+            if !localNameKeys.contains(key) {
+                toDelete.append(contentsOf: list.map { $0.0.recordID })
+                continue
+            }
+
+            // 在本機集合 → 保留最新一筆，其餘刪除
+            let sorted = list.sorted { ($0.1 ?? .distantPast) > ($1.1 ?? .distantPast) }
+            let keep = sorted.first?.0.recordID
+            for (rec, _) in sorted.dropFirst() {
+                toDelete.append(rec.recordID)
+            }
+
+            // 舊 UUID 型 recordName 一率刪，只保留名稱鍵型
+            for (rec, _) in list {
+                let rn = rec.recordID.recordName
+                if rn.hasPrefix("category-") && !rn.hasPrefix("category-name-") {
+                    if rec.recordID != keep { toDelete.append(rec.recordID) }
+                }
+            }
+        }
+
+        if !toDelete.isEmpty {
+            try await deleteRecordsInBatches(ids: Array(Set(toDelete)))
+        }
+    }
+
+    private func deleteRecordsInBatches(ids: [CKRecord.ID], batchSize: Int = 300) async throws {
+        guard !ids.isEmpty else { return }
+        let unique = Array(Set(ids))
+        let total = unique.count
+        var index = 0
+        while index < total {
+            let end = min(index + batchSize, total)
+            let slice = Array(unique[index..<end])
+            try await withCheckedThrowingContinuation { cont in
+                let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: slice)
+                op.modifyRecordsResultBlock = { result in
+                    switch result {
+                    case .success:
+                        cont.resume()
+                    case .failure(let error):
+                        cont.resume(throwing: error)
+                    }
+                }
+                self.privateDB.add(op)
+            }
+            index = end
+        }
+    }
+
+    // MARK: - Public: Purge Categories (Cloud)
+    /// 清空 CloudKit 上所有 Category 紀錄（不影響 Items）。
+    func purgeAllCategoriesCloud() async {
+        do {
+            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
+            var all: [CKRecord] = []
+            var cursor: CKQueryOperation.Cursor?
+            repeat {
+                let page = try await performQuery(query: query, cursor: cursor)
+                all.append(contentsOf: page.records)
+                cursor = page.cursor
+            } while cursor != nil
+
+            let ids = all.map { $0.recordID }
+            try await deleteRecordsInBatches(ids: ids)
+            print("✅ Purged all Category records from iCloud: \(ids.count)")
+        } catch {
+            print("❌ Purge categories from iCloud failed: \(error)")
+        }
     }
 
     // MARK: - CK helpers

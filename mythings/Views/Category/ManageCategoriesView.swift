@@ -9,12 +9,15 @@ import SwiftUI
 struct ManageCategoriesView: View {
     @ObservedObject var categoryStore: CategoryStore
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var iCloudSync: iCloudSyncManager
+    @Environment(\.editMode) private var editMode
     @State private var showAddCategoryView = false
     @State private var editingCategory: Category? = nil
 
     // 確認刪除所需狀態
     @State private var pendingDelete: IndexSet? = nil
     @State private var showDeleteAlert = false
+    @State private var showResetAllAlert = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -47,6 +50,25 @@ struct ManageCategoriesView: View {
                 }
             }
             .listStyle(.insetGrouped)
+
+            // 僅在編輯模式顯示 Reset，放在 New Category 之上
+            if editMode?.wrappedValue.isEditing == true {
+                Button(role: .destructive) {
+                    showResetAllAlert = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "trash.fill")
+                            .imageScale(.large)
+                        Text("Delete All Categories")
+                            .font(.title3.weight(.semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
 
             Button {
                 showAddCategoryView = true
@@ -96,6 +118,23 @@ struct ManageCategoriesView: View {
             }
         } message: {
             Text("This action cannot be undone.")
+        }
+
+        // Reset（本機 + iCloud）確認對話框
+        .alert("Reset Categories?", isPresented: $showResetAllAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                Task { @MainActor in
+                    // 1) 清本機
+                    categoryStore.categories.removeAll()
+                    // 2) 清雲端
+                    await iCloudSync.purgeAllCategoriesCloud()
+                    // 3) 最後再跑一次同步
+                    iCloudSync.manualSync()
+                }
+            }
+        } message: {
+            Text("Clear all categories locally and in iCloud, then resync.")
         }
     }
     

@@ -98,7 +98,7 @@ struct ContentView: View {
     @State private var pendingPhoto: PendingPhoto?
     // 用來驅動 sheet(item:)
     
-    @StateObject private var iCloudSync = iCloudSyncManager()
+    @EnvironmentObject private var iCloudSync: iCloudSyncManager
     
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
 

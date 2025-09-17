@@ -27,8 +27,8 @@ class CategoryStore: ObservableObject {
         self.iCloudSync = iCloudSync
         loadCategories()
 
-        // 預設分類（僅在無資料時）
-        if categories.isEmpty {
+        // 預設分類（僅在無資料，且目前未啟用 iCloud 時）
+        if categories.isEmpty && !iCloudSync.isEnabled {
             categories = [
                 Category(name: "3C Device", emoji: "🎧"),
                 Category(name: "Furniture",  emoji: "🪑"),
@@ -88,6 +88,20 @@ class CategoryStore: ObservableObject {
             // 先嘗試新格式（含 emoji）
             if let decoded = try? JSONDecoder().decode([Category].self, from: data) {
                 self.categories = decoded
+                return
+            }
+
+            // 相容舊的簡化格式（只有 id/name，沒有 emoji）
+            struct SimpleCategoryCompat: Identifiable, Codable {
+                var id: UUID
+                var name: String
+            }
+            if let simple = try? JSONDecoder().decode([SimpleCategoryCompat].self, from: data) {
+                self.categories = simple.map { sc in
+                    // 依名稱推測合適 emoji，若無命中則給通用符號
+                    let emoji = defaultEmoji(for: sc.name, legacyColor: "")
+                    return Category(id: sc.id, name: sc.name, emoji: emoji)
+                }
                 return
             }
 
