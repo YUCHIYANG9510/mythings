@@ -34,22 +34,9 @@
 		C2D30BBF2DBA2A1B003C912B /* DeepLabV3.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = DeepLabV3.mlmodel; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		C29FCCA52E700CF9007C67DD /* Exceptions for "mythings" folder in "mythings" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = C2D30B4F2DB933D8003C912B /* mythings */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C2D30B522DB933D8003C912B /* mythings */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				C29FCCA52E700CF9007C67DD /* Exceptions for "mythings" folder in "mythings" target */,
-			);
 			path = mythings;
 			sourceTree = "<group>";
 		};
@@ -413,14 +400,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = mythings/mythings.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"mythings/Preview Content\"";
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = mythings/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";
@@ -434,11 +419,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.daisyyang.mythings.v2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.daisyyang.mythings;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -450,14 +432,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = mythings/mythings.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"mythings/Preview Content\"";
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = mythings/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";
@@ -471,11 +451,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.daisyyang.mythings.v2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.daisyyang.mythings;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
