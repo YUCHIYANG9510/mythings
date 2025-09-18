@@ -300,15 +300,7 @@ final class iCloudSyncManager: ObservableObject {
         try ensureLocalFolders()
         print("✓ Local folders ensured")
 
-        // Pull → Push → Pull
-        print("📥 Pulling from cloud first…")
-        try Task.checkCancellation()
-        try await pullItems()
-        try Task.checkCancellation()
-        try await pullCategories()
-        print("✓ Cloud data pulled")
-
-        try Task.checkCancellation()
+        // Push-first → Pull（避免本機更動被雲端覆寫）
         let items = loadLocalItems()
         let cats = loadLocalCategories()
 
@@ -445,8 +437,9 @@ final class iCloudSyncManager: ObservableObject {
 
         var local = loadLocalItems()
         var cloudOrder: [(UUID, Int)] = []
+        var fallbackOrderIndexByUUID: [UUID: Int] = [:]
 
-        for r in all {
+        for (idx, r) in all.enumerated() {
             guard
                 let idStr = r["id"] as? String,
                 let uuid = UUID(uuidString: idStr),
@@ -499,17 +492,18 @@ final class iCloudSyncManager: ObservableObject {
             }
 
             if let orderIdx { cloudOrder.append((uuid, orderIdx)) }
+            fallbackOrderIndexByUUID[uuid] = idx
         }
 
-        // 依 orderIndex 排序（若缺失則以日期降序）
-        if supportsOrderIndex && !cloudOrder.isEmpty {
-            let orderMap = Dictionary(uniqueKeysWithValues: cloudOrder)
-            local.sort { (a, b) -> Bool in
-                let ia = orderMap[a.id] ?? Int.max
-                let ib = orderMap[b.id] ?? Int.max
-                if ia != ib { return ia < ib }
-                return (a.date ?? .distantPast) > (b.date ?? .distantPast)
-            }
+        // 以雲端順序重排：支援 orderIndex 則用之，否則用查詢返回順序（最新在前）
+        let orderMap: [UUID: Int] = (supportsOrderIndex && !cloudOrder.isEmpty)
+            ? Dictionary(uniqueKeysWithValues: cloudOrder)
+            : fallbackOrderIndexByUUID
+        local.sort { (a, b) -> Bool in
+            let ia = orderMap[a.id] ?? Int.max
+            let ib = orderMap[b.id] ?? Int.max
+            if ia != ib { return ia < ib }
+            return (a.date ?? .distantPast) > (b.date ?? .distantPast)
         }
 
         saveLocalItems(local)

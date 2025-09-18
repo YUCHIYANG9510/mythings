@@ -457,82 +457,57 @@ private extension AddItemView {
 
     // 在 AddItemView 中修正 saveTapped 方法
     private func saveTapped() {
-        if isFormValid() {
-            guard let selectedImage else { return }
-            
-            // ✅ 修正：使用統一的檔名格式，並確保路徑正確
-            let itemId = existingItem?.id ?? UUID()
-            let fileName = "\(itemId.uuidString).png"  // 統一格式：UUID.png
-            
-            // ✅ 修正：使用 Images 子目錄，與其他組件保持一致
+        if !isFormValid() {
+            showValidationAlert = true
+            return
+        }
+
+        // 無論新建或編輯，都固定採用既有或新建的 UUID 作為檔名
+        let itemId = existingItem?.id ?? UUID()
+        var finalImageName = existingItem?.imageName ?? "\(itemId.uuidString).png"
+
+        // 僅在「新增」或「編輯時選了新圖」才寫檔。編輯但未選圖時，沿用舊圖名稱與檔案。
+        if let newImage = selectedImage {
+            let fileName = "\(itemId.uuidString).png"
             let fileURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
-            
             do {
-                // ✅ 確保 Images 目錄存在
-                try FileManager.default.createDirectory(at: FileManager.imagesDirectory, 
-                                                      withIntermediateDirectories: true, 
-                                                      attributes: nil)
-                
-                // 🔧 確保有 PNG 資料
-                guard let imageData = selectedImage.pngData() else {
+                try FileManager.default.createDirectory(at: FileManager.imagesDirectory, withIntermediateDirectories: true)
+                guard let imageData = newImage.pngData() else {
                     print("❌ Failed to convert image to PNG data")
                     showValidationAlert = true
                     return
                 }
-                
-                // ✅ 修正：如果是編輯模式且檔名改變，從 Images 目錄刪除舊檔案
+                // 若檔名不同且有舊檔，刪除舊檔
                 if let existingItem = existingItem, existingItem.imageName != fileName {
-                    let oldFileURL = FileManager.imagesDirectory.appendingPathComponent(existingItem.imageName)
-                    if FileManager.default.fileExists(atPath: oldFileURL.path) {
-                        try? FileManager.default.removeItem(at: oldFileURL)
+                    let oldURL = FileManager.imagesDirectory.appendingPathComponent(existingItem.imageName)
+                    if FileManager.default.fileExists(atPath: oldURL.path) {
+                        try? FileManager.default.removeItem(at: oldURL)
                         print("🗑️ Removed old image: \(existingItem.imageName)")
                     }
                 }
-                
-                // ✅ 修正：寫入新檔案到 Images 目錄
                 try imageData.write(to: fileURL)
                 print("💾 Saved image to Images/: \(fileName) (size: \(imageData.count) bytes)")
-                
-                // 🔧 驗證檔案確實被寫入
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    if let fileSize = attributes?[.size] as? Int64 {
-                        print("✅ File verification passed: \(fileName) (\(fileSize) bytes)")
-                    } else {
-                        print("⚠️ File exists but size unknown: \(fileName)")
-                    }
-                } else {
-                    print("❌ File save failed: \(fileName)")
-                    showValidationAlert = true
-                    return
-                }
-                
+                finalImageName = fileName
+                ImageCacheManager.shared.invalidateCache(for: fileName)
             } catch {
                 print("❌ Error saving image: \(error)")
                 showValidationAlert = true
                 return
             }
-            
-            // 創建 Item 物件
-            let item = Item(
-                id: itemId,
-                imageName: fileName,
-                brand: brand,
-                category: category,
-                name: name,
-                price: priceWithDollar(price),
-                date: useDate ? selectedDate : nil
-            )
-            
-            // 🔧 清除相關的圖片快取
-            ImageCacheManager.shared.invalidateCache(for: fileName)
-            
-            // 完成回調
-            onComplete(item)
-            
-        } else {
-            showValidationAlert = true
         }
+
+        // 組合輸出的 Item（若未變更圖片，finalImageName 會沿用舊值）
+        let item = Item(
+            id: itemId,
+            imageName: finalImageName,
+            brand: brand,
+            category: category,
+            name: name,
+            price: priceWithDollar(price),
+            date: useDate ? selectedDate : existingItem?.date
+        )
+
+        onComplete(item)
     }
     func isFormValid() -> Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
