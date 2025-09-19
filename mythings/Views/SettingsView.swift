@@ -16,7 +16,9 @@ struct SettingsView: View {
     let saveItems: () -> Void
     @State private var showingDeleteAllAlert = false
     @State private var isDeletingAll = false
+    @State private var showPaywall = false
 
+    
     private var isSyncing: Bool {
         if case .syncing = iCloudSync.syncStatus { return true }
         return false
@@ -46,11 +48,13 @@ struct SettingsView: View {
             // MARK: - JOIN PRO (單一欄位卡片式)
             Section {
                 JoinProCard {
-                    // TODO: 放你的升級動作（跳內購頁 / RevenueCat paywall 等）
-                    print("Upgrade tapped")
+                    showPaywall = true
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 .listRowBackground(Color.clear)
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
             }
 
             // MARK: - DANGER ZONE
@@ -155,7 +159,7 @@ private struct JoinProCard: View {
                 )
 
             }
-            .padding(.vertical, 18)
+            .padding(.vertical, 32)
             .frame(maxWidth: .infinity, alignment: .center)
             .background(
                 LinearGradient(
