@@ -7,21 +7,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("isDarkMode") private var isDarkMode = false
-    @State private var defaultCategory = "All"
-    @State private var selectedAppIcon = "Default"
 
     @ObservedObject var categoryStore: CategoryStore
-
-    // ⬇️ 改這裡：用 EnvironmentObject 拿 iCloudSync
     @EnvironmentObject var iCloudSync: iCloudSyncManager
 
-    // Delete All Things 相關
+    // Delete All Things
     @Binding var items: [Item]
     let saveItems: () -> Void
     @State private var showingDeleteAllAlert = false
     @State private var isDeletingAll = false
-
-    let appIcons = ["Default", "Minimal", "Colorful"]
 
     private var isSyncing: Bool {
         if case .syncing = iCloudSync.syncStatus { return true }
@@ -30,14 +24,6 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            // MARK: - ICLOUD
-            Section("ICLOUD") {
-                NavigationLink("iCloud Sync") {
-                    // ⬇️ 不再傳入參數，子頁也用 EnvironmentObject
-                    ICloudSyncSettingsView()
-                }
-            }
-
             // MARK: - CATEGORIES
             Section("CATEGORIES") {
                 NavigationLink("Manage Categories") {
@@ -48,19 +34,23 @@ struct SettingsView: View {
             // MARK: - APPEARANCE
             Section("APPEARANCE") {
                 Toggle("Dark Mode", isOn: $isDarkMode)
+            }
 
-                Picker("App Icon", selection: $selectedAppIcon) {
-                    ForEach(appIcons, id: \.self) { Text($0) }
+            // MARK: - ICLOUD
+            Section("ICLOUD") {
+                NavigationLink("iCloud Sync") {
+                    ICloudSyncSettingsView() // 子頁同樣用 EnvironmentObject
                 }
             }
 
-            // MARK: - SUPPORT
-            Section("SUPPORT") {
-                Button("Rate on App Store") { }
-                    .foregroundColor(.blue)
-
-                Button("Subscribe to My Things Pro") { }
-                    .foregroundColor(.blue)
+            // MARK: - JOIN PRO (單一欄位卡片式)
+            Section {
+                JoinProCard {
+                    // TODO: 放你的升級動作（跳內購頁 / RevenueCat paywall 等）
+                    print("Upgrade tapped")
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                .listRowBackground(Color.clear)
             }
 
             // MARK: - DANGER ZONE
@@ -85,6 +75,7 @@ struct SettingsView: View {
         } message: {
             Text("Are you sure you want to delete all \(items.count) items? This action cannot be undone and will also remove all images.")
         }
+        .listStyle(.insetGrouped)
     }
 
     // 刪除所有物件
@@ -121,5 +112,111 @@ struct SettingsView: View {
         } catch {
             print("❌ Error deleting image files: \(error)")
         }
+    }
+}
+
+/// 參考附圖的「Join Pro」卡片
+private struct JoinProCard: View {
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .center, spacing: 16) {
+                Image("Star")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+                    
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Join Pro")
+                        .font(.title3).fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Text("Subscription or one-time purchase")
+                        .foregroundStyle(.white.opacity(0.9))
+                        .font(.caption)
+                }
+
+                
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title3)
+                    Text("Upgrade")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(hex: "62AFF7")) // ✅ 底色
+                .clipShape(RoundedRectangle(cornerRadius: 100, style: .continuous))
+                .overlay( // ✅ 外框
+                    RoundedRectangle(cornerRadius: 100, style: .continuous)
+                        .stroke(Color(hex: "BCDFFF"), lineWidth: 1)
+                )
+
+            }
+            .padding(.vertical, 18)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.11, green: 0.46, blue: 0.98),
+                        Color(red: 0.17, green: 0.67, blue: 1.0)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+
+extension Color {
+    init(hex: String) {
+        let scanner = Scanner(string: hex)
+        var hexNumber: UInt64 = 0
+        scanner.scanHexInt64(&hexNumber)
+        
+        let r = Double((hexNumber & 0xFF0000) >> 16) / 255
+        let g = Double((hexNumber & 0x00FF00) >> 8) / 255
+        let b = Double(hexNumber & 0x0000FF) / 255
+        
+        self.init(red: r, green: g, blue: b)
+    }
+}
+
+
+#Preview {
+    // 測試用 CategoryStore
+    let previewCategoryStore = CategoryStore()
+    previewCategoryStore.categories = [
+        Category(name: "3C Device", emoji: "🎧"),
+        Category(name: "Clothes", emoji: "👕")
+    ]
+    
+    // 測試用 iCloudSyncManager
+    let previewSync = iCloudSyncManager()
+    
+    // 測試用 items
+    @State var previewItems: [Item] = [
+        Item(id: UUID(),
+             imageName: "test.png",
+             brand: "Apple",
+             category: "3C Device",
+             name: "AirPods",
+             price: "$199",
+             date: Date())
+    ]
+    
+    return NavigationStack {
+        SettingsView(
+            categoryStore: previewCategoryStore,
+            items: $previewItems,
+            saveItems: { print("💾 saveItems called") }
+        )
+        .environmentObject(previewSync) // 注入 iCloudSync
     }
 }
