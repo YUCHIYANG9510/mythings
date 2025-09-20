@@ -14,11 +14,15 @@ struct SettingsView: View {
     // Delete All Things
     @Binding var items: [Item]
     let saveItems: () -> Void
+
     @State private var showingDeleteAllAlert = false
     @State private var isDeletingAll = false
-    @State private var showPaywall = false
 
-    
+    // 🔑 RevenueCat
+    @EnvironmentObject var pm: PurchasesManager
+    @State private var navToICloud = false
+    @State private var showPaywall = false   // ← 只保留這一個
+
     private var isSyncing: Bool {
         if case .syncing = iCloudSync.syncStatus { return true }
         return false
@@ -40,9 +44,28 @@ struct SettingsView: View {
 
             // MARK: - ICLOUD
             Section("ICLOUD") {
-                NavigationLink("iCloud Sync") {
-                    ICloudSyncSettingsView() // 子頁同樣用 EnvironmentObject
+                Button {
+                    if pm.canUseICloud {
+                        navToICloud = true
+                    } else {
+                        showPaywall = true
+                    }
+                } label: {
+                    HStack {
+                        Text("iCloud Sync")
+                        if !pm.canUseICloud {
+                            Spacer()
+                            Text("Pro")
+                                .font(.caption)
+                                .padding(6)
+                                .background(Color.secondary.opacity(0.15), in: Capsule())
+                        }
+                    }
                 }
+            }
+            // iOS 17 的布林導航（可保留）
+            .navigationDestination(isPresented: $navToICloud) {
+                ICloudSyncSettingsView()
             }
 
             // MARK: - JOIN PRO (單一欄位卡片式)
@@ -52,9 +75,6 @@ struct SettingsView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 .listRowBackground(Color.clear)
-            }
-            .sheet(isPresented: $showPaywall) {
-                PaywallView()
             }
 
             // MARK: - DANGER ZONE
@@ -73,6 +93,12 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+
+        // 共用一個 Paywall sheet（任何地方觸發都使用這個）
+        .sheet(isPresented: $showPaywall) {
+            PaywallView().environmentObject(pm)
+        }
+
         .alert("Delete All Things", isPresented: $showingDeleteAllAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete All", role: .destructive) { deleteAllItems() }
@@ -130,7 +156,7 @@ private struct JoinProCard: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 40, height: 40)
-                    
+
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Join Pro")
                         .font(.title3).fontWeight(.semibold)
@@ -140,7 +166,6 @@ private struct JoinProCard: View {
                         .font(.caption)
                 }
 
-                
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title3)
@@ -151,9 +176,9 @@ private struct JoinProCard: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color(hex: "62AFF7")) // ✅ 底色
+                .background(Color(hex: "62AFF7"))
                 .clipShape(RoundedRectangle(cornerRadius: 100, style: .continuous))
-                .overlay( // ✅ 外框
+                .overlay(
                     RoundedRectangle(cornerRadius: 100, style: .continuous)
                         .stroke(Color(hex: "BCDFFF"), lineWidth: 1)
                 )
@@ -177,21 +202,19 @@ private struct JoinProCard: View {
     }
 }
 
-
 extension Color {
     init(hex: String) {
         let scanner = Scanner(string: hex)
         var hexNumber: UInt64 = 0
         scanner.scanHexInt64(&hexNumber)
-        
+
         let r = Double((hexNumber & 0xFF0000) >> 16) / 255
         let g = Double((hexNumber & 0x00FF00) >> 8) / 255
         let b = Double(hexNumber & 0x0000FF) / 255
-        
+
         self.init(red: r, green: g, blue: b)
     }
 }
-
 
 #Preview {
     // 測試用 CategoryStore
@@ -200,12 +223,12 @@ extension Color {
         Category(name: "3C Device", emoji: "🎧"),
         Category(name: "Clothes", emoji: "👕")
     ]
-    
+
     // 測試用 iCloudSyncManager
     let previewSync = iCloudSyncManager()
-    
-    // 測試用 items
-    @State var previewItems: [Item] = [
+
+    // 測試用 items（常數）
+    let sampleItems: [Item] = [
         Item(id: UUID(),
              imageName: "test.png",
              brand: "Apple",
@@ -214,13 +237,15 @@ extension Color {
              price: "$199",
              date: Date())
     ]
-    
+
     return NavigationStack {
         SettingsView(
             categoryStore: previewCategoryStore,
-            items: $previewItems,
-            saveItems: { print("💾 saveItems called") }
+            items: .constant(sampleItems),        // ✅ 用常數 Binding
+            saveItems: { /* no-op in preview */ }
         )
-        .environmentObject(previewSync) // 注入 iCloudSync
+        .environmentObject(previewSync)          // 注入 iCloudSync
+        .environmentObject(PurchasesManager())   // 注入 PurchasesManager
     }
 }
+

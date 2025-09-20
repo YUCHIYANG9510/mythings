@@ -8,16 +8,20 @@
 import SwiftUI
 
 struct PaywallView: View {
+
+    // 你原本的兩種方案
     enum Plan: String, CaseIterable, Identifiable {
         case annual, lifetime
         var id: String { rawValue }
         var title: String { self == .annual ? "Annual" : "Lifetime" }
         var subtitle: String { self == .annual ? "1 month free trial" : "Yours forever" }
-        var price: String { self == .annual ? "$390.00" : "$990.00" } // TODO: 換 RevenueCat 價格
     }
 
+    // 從環境取得購買管理與關閉方法
+    @EnvironmentObject var pm: PurchasesManager
+    @Environment(\.dismiss) private var dismiss
+
     @State private var selected: Plan = .annual
-    @State private var isLoading = false
 
     var body: some View {
         NavigationStack {
@@ -32,10 +36,8 @@ struct PaywallView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
-            // ✅ 允許下滑關閉（預設即可），這裡明確打開互動式關閉
-            .interactiveDismissDisabled(false)
-            // ✅ 固定置底：CTA + footer
-            .safeAreaInset(edge: .bottom) { bottomBar }
+            .interactiveDismissDisabled(false) // 可下滑關閉
+            .safeAreaInset(edge: .bottom) { bottomBar } // 固定置底 CTA
         }
     }
 
@@ -85,7 +87,6 @@ struct PaywallView: View {
         .padding(.horizontal, 20)
     }
 
-
     private var planSelector: some View {
         VStack(spacing: 0) {
             planRow(plan: .annual, selected: $selected)
@@ -102,16 +103,17 @@ struct PaywallView: View {
     private var bottomBar: some View {
         VStack(spacing: 14) {
             Button {
-                // TODO: 串 RevenueCat 購買 selected
-                isLoading = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { isLoading = false }
+                Task {
+                    let ok = await pm.purchase(plan: paywallPlan(from: selected))
+                    if ok { dismiss() }
+                }
             } label: {
                 Text(selected == .annual ? "Try free & subscribe" : "Buy lifetime")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
             }
-            .disabled(isLoading)
+            .disabled(pm.isBusy)
             .background(Color.black)
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -123,8 +125,9 @@ struct PaywallView: View {
                 Link("Terms", destination: URL(string: "https://example.com/terms")!)
                 Circle().frame(width: 3, height: 3).foregroundStyle(.tertiary)
                 Button("Restore purchases") {
-                    // TODO: RevenueCat restore
+                    Task { await pm.restore(); if pm.isPro { dismiss() } }
                 }
+                .disabled(pm.isBusy)
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -156,7 +159,6 @@ struct PaywallView: View {
         .padding(.vertical, 14)
     }
 
-
     private func planRow(plan: Plan, selected: Binding<Plan>) -> some View {
         Button {
             selected.wrappedValue = plan
@@ -170,13 +172,20 @@ struct PaywallView: View {
                     Text(plan.subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(plan.price).font(.headline)
+                // ✅ 價格改為 RevenueCat 的本地化價格
+                Text(pm.priceText(for: paywallPlan(from: plan)) ?? "…")
+                    .font(.headline)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // Plan ↔︎ PurchasesManager 用的 PaywallPlan 映射
+    private func paywallPlan(from plan: Plan) -> PaywallPlan {
+        plan == .annual ? .annual : .lifetime
     }
 }
 
@@ -185,4 +194,5 @@ struct PaywallView: View {
 
 #Preview("Paywall") {
     PaywallView()
+        .environmentObject(PurchasesManager()) // 預覽需要注入，避免編譯錯
 }

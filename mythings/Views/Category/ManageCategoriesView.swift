@@ -10,6 +10,11 @@ struct ManageCategoriesView: View {
     @ObservedObject var categoryStore: CategoryStore
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
+
+    // 🔑 RevenueCat：用於分類數量 gating（免費上限 6）
+    @EnvironmentObject private var pm: PurchasesManager
+    @State private var showPaywall = false
+
     @Environment(\.editMode) private var editMode
     @State private var showAddCategoryView = false
     @State private var editingCategory: Category? = nil
@@ -71,14 +76,30 @@ struct ManageCategoriesView: View {
             }
 
             Button {
-                showAddCategoryView = true
+                // ✅ 限制：免費用戶最多 6 個分類；超過則彈付費牆
+                if pm.canAddCategory(currentCount: categoryStore.categories.count) {
+                    showAddCategoryView = true
+                } else {
+                    showPaywall = true
+                }
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "plus.circle.fill")
                         .imageScale(.large)
                     Text("New Category")
                         .font(.title3.weight(.semibold))
-                    Spacer()
+
+                    // 小提示：非 Pro 且已達上限時顯示 Pro badge
+                    if !pm.isPro && categoryStore.categories.count >= 6 {
+                        Spacer()
+                        Text("Pro")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.15), in: Capsule())
+                    } else {
+                        Spacer()
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
@@ -98,18 +119,25 @@ struct ManageCategoriesView: View {
             AddCategoryView(categoryStore: categoryStore)
                 .presentationDetents([.fraction(0.7)])
                 .presentationCornerRadius(40)
+                // （可選）若擔心其它入口能新增分類，可在 AddCategoryView 的保存動作再檢一次 pm.canAddCategory
         }
         .sheet(item: $editingCategory) { category in
             EditCategoryView(categoryStore: categoryStore, category: category)
                 .presentationDetents([.fraction(0.7)])
                 .presentationCornerRadius(40)
         }
+
+        // 付費牆（當達到上限時彈出）
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(pm)
+        }
+
         // 刪除確認對話框
         .alert("Delete Category?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) {
                 pendingDelete = nil
             }
-            
             Button("Delete", role: .destructive) {
                 if let idx = pendingDelete {
                     categoryStore.deleteCategory(at: idx)
@@ -127,14 +155,16 @@ struct ManageCategoriesView: View {
                 Task { @MainActor in
                     // 1) 清本機
                     categoryStore.categories.removeAll()
-                    // 2) 清雲端
-                    await iCloudSync.purgeAllCategoriesCloud()
-                    // 3) 最後再跑一次同步
-                    iCloudSync.manualSync()
+
+                    // 2) 僅在啟用 iCloud（= Pro）時清雲端，避免免費用戶觸發雲端操作
+                    if iCloudSync.isEnabled {
+                        await iCloudSync.purgeAllCategoriesCloud()
+                        iCloudSync.manualSync()
+                    }
                 }
             }
         } message: {
-            Text("Clear all categories locally and in iCloud, then resync.")
+            Text("Clear all categories locally.\(iCloudSync.isEnabled ? " Also clears iCloud and resyncs." : "")")
         }
     }
     
@@ -153,7 +183,11 @@ struct ManageCategoriesView: View {
         Category(name: "Shoes", emoji: "👟"),
         Category(name: "Bags", emoji: "🎒")
     ]
+
+    // ✅ 預覽注入必要的 EnvironmentObject，避免崩潰
     return NavigationStack {
         ManageCategoriesView(categoryStore: previewStore)
     }
+    .environmentObject(iCloudSyncManager())
+    .environmentObject(PurchasesManager())
 }

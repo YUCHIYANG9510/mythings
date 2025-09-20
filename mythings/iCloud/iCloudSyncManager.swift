@@ -530,7 +530,7 @@ final class iCloudSyncManager: ObservableObject {
             cursor = page.cursor
         } while cursor != nil
 
-        var local = loadLocalCategories()
+        let local = loadLocalCategories()
 
         // 暫存依名稱去重：保留最新 updatedAt 的一筆
         var nameToBest: [String: (Category, Date?, CKRecord.ID, Int?)] = [:]

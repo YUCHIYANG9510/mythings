@@ -27,7 +27,6 @@ enum PageMode {
     case canvas
 }
 
-
 extension View {
     /// iOS 17 之後的 onChange 使用 0 或 2 參數；iOS 16 仍是舊版 1 參數。
     @ViewBuilder
@@ -60,7 +59,6 @@ struct PendingPhoto: Identifiable {
     let image: UIImage
 }
 
-
 struct ContentView: View {
     @State private var selectedCategory = "All"
     @State private var showImagePicker = false
@@ -88,29 +86,20 @@ struct ContentView: View {
     // MARK: - 新增：排序狀態
     @State private var sortKey: SortKey = .none
     @State private var sortOrder: SortOrder = .descending
-    // 預設顯示「最新在前」
-    
 
-    /*  @State private var pendingOriginal: UIImage?
-    // 拍攝/選取的原始圖，準備進入 Edit Photo
-    @State private var showEditPhoto = false
-    // 是否顯示 Edit Photo 頁 */
     @State private var pendingPhoto: PendingPhoto?
-    // 用來驅動 sheet(item:)
-    
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
-    
+
+    // 🔑 RevenueCat（用於功能 gating）
+    @EnvironmentObject private var pm: PurchasesManager
+    @State private var showPaywall = false
+
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
 
-    
     // ✅ 永久化儲存
-    @AppStorage(
-        "sort.key"
-    )   private var storedSortKey: String   = SortKey.none.rawValue
-    @AppStorage(
-        "sort.order"
-    ) private var storedSortOrder: String = SortOrder.descending.rawValue
-    
+    @AppStorage("sort.key")   private var storedSortKey: String   = SortKey.none.rawValue
+    @AppStorage("sort.order") private var storedSortOrder: String = SortOrder.descending.rawValue
+
     private var savePath: URL {
         FileManager.documentsDirectory.appendingPathComponent("items.json")
     }
@@ -119,29 +108,19 @@ struct ContentView: View {
     var categoryNames: [String] {
         var names = ["All"]; names.append(contentsOf: categoryStore.categories.map { $0.name }); return names
     }
-    // MARK: - 分類篩選後的顯示清單
-    /*private func itemsFor(category: String) -> [Item] {
-        let categoryFiltered = (category == "All") ? displayedItems : displayedItems.filter { $0.category == category }
-        guard !searchText.isEmpty else { return categoryFiltered }
-        return categoryFiltered.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            $0.brand.localizedCaseInsensitiveContains(searchText)
-        }
-    } */
 
-    // MARK: - 修正：排序後的顯示清單，sortKey == .none 時保持原始順序（最新在前）
+    // MARK: - 排序後的顯示清單
     private var displayedItems: [Item] {
         if sortKey == .none {
-            return items  // 保持原始順序（新增時用 insert(at: 0)）
+            return items
         } else {
             return sort(items, by: sortKey, order: sortOrder)
         }
     }
-    
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottomTrailing) {
-                // 這裡放你的主要內容（HeaderView / CategoryPager / CanvasBoardView 等）
                 VStack {
                     if pageMode == .default {
                         HeaderView(
@@ -173,8 +152,8 @@ struct ContentView: View {
                                         imageLoader: ImageMemoryCache.shared)
                     }
                 }
-                
-                // FloatingAddMenu 獨立佈局
+
+                // FloatingAddMenu
                 FloatingAddMenu(
                     isOpen: $showActionSheet,
                     showCamera: $showCamera,
@@ -182,55 +161,69 @@ struct ContentView: View {
                 )
 
                 VStack {
-                       Spacer()
-                       HStack {
-                           Spacer()
-                           CanvasTabToggle(selected: $pageMode)
-                               .padding(.trailing, 20)
-                               .padding(.bottom, 28)
-                       }
-                   }
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        CanvasTabToggle(selected: $pageMode)
+                            .padding(.trailing, 20)
+                            .padding(.bottom, 28)
+                    }
+                }
             }
             .navigationDestination(for: NavigationTarget.self) { target in
                 switch target {
-                case .settings: SettingsView(
-                    categoryStore: categoryStore,
-                    items: $items,
-                    saveItems: saveItems
-                )
-
+                case .settings:
+                    SettingsView(
+                        categoryStore: categoryStore,
+                        items: $items,
+                        saveItems: saveItems
+                    )
                 }
             }
         }
-        // 讀取現有資料（包含 items）後，同步還原排序設定
+        // 初次載入
         .onAppear {
             loadItems()
             if let idx = categoryNames.firstIndex(of: selectedCategory) {
                 selectedPage = idx
             }
-            
-            // 還原排序設定
             sortKey   = SortKey(rawValue: storedSortKey) ?? .none
             sortOrder = SortOrder(rawValue: storedSortOrder) ?? .descending
-
             HapticsManager.shared.prepare()
             selectionHaptic.prepare()
         }
 
-        // 🔁 每次變更就寫回 UserDefaults
-        .onChange(of: sortKey) { _, newValue in
-            storedSortKey = newValue.rawValue
+        // 🔁 寫回排序偏好
+        .onChange(of: sortKey) { _, newValue in storedSortKey = newValue.rawValue }
+        .onChange(of: sortOrder) { _, newValue in storedSortOrder = newValue.rawValue }
+
+        // ✅ 在開啟相簿/相機前，先檢查是否超過免費上限；不符 → 關閉並彈付費牆
+        .onChange(of: showImagePicker) { _, newValue in
+            guard newValue == true else { return }
+            if !pm.canAddItem(currentCount: items.count) {
+                showImagePicker = false
+                showPaywall = true
+            }
         }
-        .onChange(of: sortOrder) { _, newValue in
-            storedSortOrder = newValue.rawValue
+        .onChange(of: showCamera) { _, newValue in
+            guard newValue == true else { return }
+            if !pm.canAddItem(currentCount: items.count) {
+                showCamera = false
+                showPaywall = true
+            }
         }
-        
-        .sheet(isPresented: $showManageCategories) { ManageCategoriesView(categoryStore: categoryStore) }
+
+        // 各種 Sheet
+        .sheet(isPresented: $showManageCategories) {
+            ManageCategoriesView(categoryStore: categoryStore)
+                .environmentObject(pm) // 若裡面要做分類 gating，可取用 pm
+        }
+
         .sheet(isPresented: $showImagePicker) {
             PhotoPicker(selectedImage: $selectedImage, shouldRemoveBackground: false)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    pendingPhoto = PendingPhoto(image: img)   // 直接進 pendingPhoto
+                    pendingPhoto = PendingPhoto(image: img)
                     selectedImage = nil
                 }
         }
@@ -239,7 +232,7 @@ struct ContentView: View {
             CameraPicker(selectedImage: $selectedImage)
                 .onDisappear {
                     guard let img = selectedImage else { return }
-                    pendingPhoto = PendingPhoto(image: img)   // 直接進 pendingPhoto
+                    pendingPhoto = PendingPhoto(image: img)
                     selectedImage = nil
                 }
         }
@@ -264,23 +257,21 @@ struct ContentView: View {
 
         .sheet(item: $editingItem) { editing in
             AddItemView(
-                selectedImage: .constant(nil), // ✅ 修正：編輯模式下不預設圖片，讓 AddItemView 自己載入
+                selectedImage: .constant(nil),
                 existingItem: editing,
                 categoryStore: categoryStore,
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
+                // 編輯不受數量上限限制（只是更新）
                 if let idx = items.firstIndex(where: { $0.id == editing.id }) {
                     items[idx] = newItem
                 }
-                // ✅ 重要：把舊的 / 新的 imageName 從快取移除
                 ImageCacheManager.shared.invalidateCache(for: editing.imageName)
                 if editing.imageName != newItem.imageName {
                     ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
                 }
-
                 editingItem = nil
-                // selectedImage = nil // ✅ 不需要設為 nil，因為傳入的是 .constant(nil)
                 saveItems()
             }
         }
@@ -293,17 +284,20 @@ struct ContentView: View {
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                items.insert(newItem, at: 0)
-                selectedImage = nil
-                isAddingNewItem = false
-                saveItems()
-
-                // ✅ 新增完也把該圖清掉（避免同名覆蓋的情況）
-                ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
+                // ✅ 第二道防線：新增前再檢查一次
+                if pm.canAddItem(currentCount: items.count) {
+                    items.insert(newItem, at: 0)
+                    selectedImage = nil
+                    isAddingNewItem = false
+                    saveItems()
+                    ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
+                } else {
+                    // 仍不符合 → 顯示付費牆（不自動關閉 AddItemView，讓使用者決定）
+                    showPaywall = true
+                }
             }
         }
 
-        
         .sheet(item: $pendingPhoto) { payload in
             EditPhotoView(
                 original: payload.image,
@@ -311,8 +305,13 @@ struct ContentView: View {
                     await removeBackground(from: img)
                 },
                 onDone: { finalImage in
-                    selectedImage = finalImage
-                    DispatchQueue.main.async { isAddingNewItem = true }
+                    // ✅ 第一道防線：完成剪圖時先檢查上限
+                    if pm.canAddItem(currentCount: items.count) {
+                        selectedImage = finalImage
+                        DispatchQueue.main.async { isAddingNewItem = true }
+                    } else {
+                        showPaywall = true
+                    }
                     pendingPhoto = nil
                 },
                 onCancel: {
@@ -323,15 +322,19 @@ struct ContentView: View {
             .presentationCornerRadius(24)
         }
 
+        // 付費牆
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(pm)
+        }
 
-       
+        // 分頁切換
         .onChange(of: selectedPage) { _, newValue in
             if categoryNames.indices.contains(newValue) {
                 HapticsManager.shared.pageSnap(strength: lastSwipeStrength)
                 let cat = categoryNames[newValue]
                 if cat != selectedCategory { selectedCategory = cat }
             }
-            // 預熱下次觸覺回饋
             HapticsManager.shared.prepare()
             selectionHaptic.prepare()
         }
@@ -340,129 +343,115 @@ struct ContentView: View {
                 selectedPage = idx
             }
         }
-        
-      
-        
     }
-    
+
     private func saveItems() {
-            do {
-                let data = try JSONEncoder().encode(items)
-                try data.write(to: savePath)
-                
-                // 如果啟用了 iCloud 同步，觸發同步
-                if iCloudSync.isEnabled {
-                    iCloudSync.manualSync()
-                }
-            } catch {
-                print("儲存失敗：\(error)")
-            }
-        }
-    
-    private func loadItems() {
-            // 如果啟用了 iCloud 同步，先嘗試同步
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: savePath)
+
+            // 只有 Pro 會啟用 iCloud
             if iCloudSync.isEnabled {
                 iCloudSync.manualSync()
-                // 稍等同步完成後再載入
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    loadItemsFromLocal()
-                }
-            } else {
+            }
+        } catch {
+            print("儲存失敗：\(error)")
+        }
+    }
+
+    private func loadItems() {
+        if iCloudSync.isEnabled {
+            iCloudSync.manualSync()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 loadItemsFromLocal()
             }
+        } else {
+            loadItemsFromLocal()
         }
-    
+    }
+
     private func loadItemsFromLocal() {
-            do {
-                let data = try Data(contentsOf: savePath)
-                var decoded = try JSONDecoder().decode([Item].self, from: data)
-                // ✅ 讀取舊資料後，規一化價錢，避免舊資料有 "$$"
-                decoded = decoded.map { item in
-                    Item(
-                        id: item.id,
-                        imageName: item.imageName,
-                        brand: item.brand,
-                        category: item.category,
-                        name: item.name,
-                        price: normalizedPriceString(item.price),
-                        date: item.date
-                    )
-                }
-
-                items = decoded
-            } catch {
-                print("讀取失敗或尚無資料：\(error)")
-            }
-        }
-    }
-    
-    @MainActor
-    func removeBackground(from image: UIImage) async -> UIImage? {
-        guard let ciImage = CIImage(image: image) else { return nil }
-        let request = VNGenerateForegroundInstanceMaskRequest()
-        let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
         do {
-            try handler.perform([request])
-            guard let obs = request.results?.first as? VNInstanceMaskObservation else { return nil }
-            let maskBuffer = try obs.generateScaledMaskForImage(forInstances: obs.allInstances, from: handler)
-            let maskCI  = CIImage(cvPixelBuffer: maskBuffer)
-            let extent  = ciImage.extent
-            let clearBG = CIImage(color: .clear).cropped(to: extent)
-            let cut = CIFilter.blendWithMask()
-            cut.inputImage      = ciImage
-            cut.maskImage       = maskCI
-            cut.backgroundImage = clearBG
-            guard let output = cut.outputImage else { return nil }
-            let ctx = CIContext()
-            guard let cg = ctx.createCGImage(output, from: output.extent) else { return nil }
-            return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
+            let data = try Data(contentsOf: savePath)
+            var decoded = try JSONDecoder().decode([Item].self, from: data)
+            // 規一化價格
+            decoded = decoded.map { item in
+                Item(
+                    id: item.id,
+                    imageName: item.imageName,
+                    brand: item.brand,
+                    category: item.category,
+                    name: item.name,
+                    price: normalizedPriceString(item.price),
+                    date: item.date
+                )
+            }
+            items = decoded
         } catch {
-            print("removeBackground error: \(error)")
-            return nil
+            print("讀取失敗或尚無資料：\(error)")
         }
     }
-    
-    // MARK: - 新增：排序工具
-       private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] {
-           var sorted = items.sorted { a, b in
-               switch key {
-               case .purchaseDate:
-                   // 假設 Item.date 是 Date?；若是 String 請告訴我格式再幫你轉
-                   let da = a.date ?? .distantPast
-                   let db = b.date ?? .distantPast
-                   return da < db
+}
 
-               case .price:
-                   let pa = priceValue(a.price)
-                   let pb = priceValue(b.price)
-                   return pa < pb
+@MainActor
+func removeBackground(from image: UIImage) async -> UIImage? {
+    guard let ciImage = CIImage(image: image) else { return nil }
+    let request = VNGenerateForegroundInstanceMaskRequest()
+    let handler = VNImageRequestHandler(ciImage: ciImage, options: [:])
+    do {
+        try handler.perform([request])
+        guard let obs = request.results?.first as? VNInstanceMaskObservation else { return nil }
+        let maskBuffer = try obs.generateScaledMaskForImage(forInstances: obs.allInstances, from: handler)
+        let maskCI  = CIImage(cvPixelBuffer: maskBuffer)
+        let extent  = ciImage.extent
+        let clearBG = CIImage(color: .clear).cropped(to: extent)
+        let cut = CIFilter.blendWithMask()
+        cut.inputImage      = ciImage
+        cut.maskImage       = maskCI
+        cut.backgroundImage = clearBG
+        guard let output = cut.outputImage else { return nil }
+        let ctx = CIContext()
+        guard let cg = ctx.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
+    } catch {
+        print("removeBackground error: \(error)")
+        return nil
+    }
+}
 
-               case .name:
-                   return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-                   
-               case .none:
-                   return false
-               }
-           }
-           if order == .descending { sorted.reverse() }
-           return sorted
-       }
-    
-    /// 將字串價格（例如 "$1,299.50" 或 "1299"）轉成 Double 用於排序
-        private func priceValue(_ s: String) -> Double {
-            // 去除貨幣符號與空白，保留數字與小數點
-            let cleaned = s
-                .replacingOccurrences(of: ",", with: "")
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: "NT$", with: "")
-                .replacingOccurrences(of: "$", with: "")
-            return Double(cleaned) ?? 0
+// MARK: - 排序工具
+private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] {
+    var sorted = items.sorted { a, b in
+        switch key {
+        case .purchaseDate:
+            let da = a.date ?? .distantPast
+            let db = b.date ?? .distantPast
+            return da < db
+        case .price:
+            let pa = priceValue(a.price)
+            let pb = priceValue(b.price)
+            return pa < pb
+        case .name:
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        case .none:
+            return false
         }
-    
+    }
+    if order == .descending { sorted.reverse() }
+    return sorted
+}
 
+/// 將字串價格轉成 Double 用於排序
+private func priceValue(_ s: String) -> Double {
+    let cleaned = s
+        .replacingOccurrences(of: ",", with: "")
+        .replacingOccurrences(of: " ", with: "")
+        .replacingOccurrences(of: "NT$", with: "")
+        .replacingOccurrences(of: "$", with: "")
+    return Double(cleaned) ?? 0
+}
 
-
-
+// MARK: - Thumbnails
 
 struct ListItemImageView: View {
     let imageName: String
@@ -481,7 +470,6 @@ struct ListItemImageView: View {
             } else if isLoading {
                 ProgressView()
             } else {
-                // 空檔名或載入失敗時的佔位
                 Image(systemName: "photo")
                     .font(.system(size: 22, weight: .light))
                     .foregroundStyle(.secondary)
@@ -495,7 +483,6 @@ struct ListItemImageView: View {
     }
 
     private func loadImage() {
-        // 防呆：只取檔名，避免整條路徑；空字串就顯示佔位不轉圈
         let fileName = (imageName as NSString).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !fileName.isEmpty else {
             self.image = nil
@@ -511,7 +498,6 @@ struct ListItemImageView: View {
     }
 }
 
-
 struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 24) {
@@ -521,8 +507,6 @@ struct EmptyStateView: View {
         .padding(.top, 250)
     }
 }
-
-
 
 struct ItemImageView: View {
     let imageName: String
@@ -562,7 +546,6 @@ struct ItemImageView: View {
     }
 }
 
-
 struct CanvasTabToggle: View {
     @Binding var selected: PageMode
 
@@ -590,7 +573,6 @@ struct CanvasTabToggle: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            // 左：Default
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .default
@@ -600,7 +582,6 @@ struct CanvasTabToggle: View {
             }
             .accessibilityLabel("Default View")
 
-            // 右：Canvas
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .canvas
@@ -620,8 +601,10 @@ struct CanvasTabToggle: View {
     }
 }
 
-
-
 #Preview {
-    ContentView(categoryStore: CategoryStore())
+    // 預覽時注入必要的 EnvironmentObject，避免崩潰
+    let previewSync = iCloudSyncManager()
+    return ContentView(categoryStore: CategoryStore())
+        .environmentObject(previewSync)
+        .environmentObject(PurchasesManager())
 }
