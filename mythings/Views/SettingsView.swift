@@ -57,7 +57,8 @@ struct SettingsView: View {
                             Spacer()
                             Text("Pro")
                                 .font(.caption)
-                                .padding(6)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
                                 .background(Color.secondary.opacity(0.15), in: Capsule())
                         }
                     }
