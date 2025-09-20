@@ -116,7 +116,10 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
     /// 抓取 Offerings（可能拋錯）
     func fetchOfferings() async {
         do {
-            offerings = try await Purchases.shared.offerings()
+            let fetchedOfferings = try await Purchases.shared.offerings()
+            await MainActor.run {
+                offerings = fetchedOfferings
+            }
         } catch {
             print("offerings error: \(error)")
         }
