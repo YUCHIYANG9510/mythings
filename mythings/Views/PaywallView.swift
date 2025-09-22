@@ -14,7 +14,7 @@ struct PaywallView: View {
         case annual, lifetime
         var id: String { rawValue }
         var title: String { self == .annual ? "Annual" : "Lifetime" }
-        var subtitle: String { self == .annual ? "1 month free trial" : "Yours forever" }
+        var subtitle: String { self == .annual ? "Billed annually" : "Yours forever" }
     }
 
     // 從環境取得購買管理與關閉方法
@@ -108,7 +108,7 @@ struct PaywallView: View {
                     if ok { dismiss() }
                 }
             } label: {
-                Text(selected == .annual ? "Try free & subscribe" : "Buy lifetime")
+                Text(selected == .annual ? "Subscribe annually" : "Buy lifetime")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)

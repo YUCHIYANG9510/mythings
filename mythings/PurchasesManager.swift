@@ -7,26 +7,29 @@
 
 import Foundation
 import RevenueCat
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // 不要在類別層級加 @MainActor，避免與 PurchasesDelegate 衝突（Swift 6 更嚴格）
 final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
     // === 你的 RC entitlement 名稱 ===
-    private let entitlementID = "pro"
+    private let entitlementID = "Premium"
 
     // === 你現在的商品 ID ===
     enum SKU {
         static let lifetime     = "com.mythings.lifetime"       // 非消耗性
         static let yearly       = "com.mythings.yearly"         // 年費
-        static let yearlyTrial  = "com.mythings.yearly_trial"   // 年費（含 1 個月試用）
-        static var annualCandidates: [String] { [yearlyTrial, yearly] }
-        static var all: [String] { [lifetime, yearly, yearlyTrial] }
+        static var annualCandidates: [String] { [yearly] }
+        static var all: [String] { [lifetime, yearly] }
     }
 
     // 對外狀態
     @Published private(set) var isPro: Bool = false
     @Published private(set) var offerings: Offerings?
     @Published private(set) var isBusy: Bool = false
+    @Published private(set) var latestCustomerInfo: CustomerInfo?
 
     private var productMap: [String: StoreProduct] = [:]
 
@@ -59,7 +62,7 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
     func priceText(for plan: PaywallPlan) -> String? {
         switch plan {
         case .annual:
-            if let p = productMap[SKU.yearlyTrial] ?? productMap[SKU.yearly] { return p.localizedPriceString }
+            if let p = productMap[SKU.yearly] { return p.localizedPriceString }
         case .lifetime:
             if let p = productMap[SKU.lifetime] { return p.localizedPriceString }
         }
@@ -160,7 +163,7 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
         switch plan {
         case .annual:
-            if let p = productMap[SKU.yearlyTrial] ?? productMap[SKU.yearly] { return p }
+            if let p = productMap[SKU.yearly] { return p }
             let ps = await Purchases.shared.products(SKU.annualCandidates)
             if let p = ps.first { return p }
             throw PMError.productNotFound("annual")
@@ -177,7 +180,18 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
     @MainActor
     private func applyCustomerInfo(_ info: CustomerInfo?) {
+        latestCustomerInfo = info
         isPro = info?.entitlements[entitlementID]?.isActive == true
+        #if DEBUG
+        if let info {
+            let active = info.entitlements[entitlementID]?.isActive == true
+            let pid = info.entitlements[entitlementID]?.productIdentifier ?? "-"
+            let exp = info.entitlements[entitlementID]?.expirationDate?.description ?? "nil"
+            print("[PM] applyCustomerInfo -> isPro=\(active) pid=\(pid) exp=\(exp)")
+        } else {
+            print("[PM] applyCustomerInfo -> info nil")
+        }
+        #endif
     }
 
     // MARK: - PurchasesDelegate
@@ -190,3 +204,31 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
 // Paywall 用的方案 enum（與你的 PaywallView 映射一致）
 enum PaywallPlan { case annual, lifetime }
+
+// MARK: - Pro 狀態查詢輔助
+extension PurchasesManager {
+    /// 目前啟用中的 entitlement 對應的產品 ID（若有）
+    var proProductIdentifier: String? {
+        latestCustomerInfo?.entitlements[entitlementID]?.productIdentifier
+    }
+
+    /// 若為訂閱，回傳到期日；若為終身購買通常為 nil
+    var proExpirationDate: Date? {
+        latestCustomerInfo?.entitlements[entitlementID]?.expirationDate
+    }
+
+    /// 簡易判斷是否為終身購買
+    var isLifetime: Bool {
+        proProductIdentifier == SKU.lifetime && isPro
+    }
+
+    /// 嘗試開啟系統的訂閱管理頁面
+    func openManageSubscriptions() {
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else { return }
+        #if canImport(UIKit)
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url)
+        }
+        #endif
+    }
+}

@@ -28,25 +28,12 @@
       "productID" : "com.mythings.lifetime",
       "referenceName" : "Lifetime",
       "type" : "NonConsumable"
-    },
-    {
-      "displayPrice" : "0",
-      "familyShareable" : false,
-      "internalID" : "B395A975",
-      "localizations" : [
-        {
-          "description" : "Free Trial",
-          "displayName" : "1-Month Free Trial",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "com.mythings.yearly_trial",
-      "referenceName" : "1-Month Free Trial",
-      "type" : "NonConsumable"
     }
   ],
   "settings" : {
     "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
     "_storeKitErrors" : [
       {
         "current" : null,

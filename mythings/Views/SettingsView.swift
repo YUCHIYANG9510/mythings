@@ -22,6 +22,7 @@ struct SettingsView: View {
     @EnvironmentObject var pm: PurchasesManager
     @State private var navToICloud = false
     @State private var showPaywall = false   // ← 只保留這一個
+    @State private var showProStatus = false
 
     private var isSyncing: Bool {
         if case .syncing = iCloudSync.syncStatus { return true }
@@ -71,11 +72,20 @@ struct SettingsView: View {
 
             // MARK: - JOIN PRO (單一欄位卡片式)
             Section {
-                JoinProCard {
-                    showPaywall = true
+                if pm.isPro {
+                    ProActiveCard {
+                        // 進入 Pro 狀態頁
+                        navigateToProStatus()
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+                } else {
+                    JoinProCard {
+                        showPaywall = true
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
                 }
-                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                .listRowBackground(Color.clear)
             }
 
             // MARK: - DANGER ZONE
@@ -98,6 +108,11 @@ struct SettingsView: View {
         // 共用一個 Paywall sheet（任何地方觸發都使用這個）
         .sheet(isPresented: $showPaywall) {
             PaywallView().environmentObject(pm)
+        }
+
+        // Pro 狀態頁
+        .sheet(isPresented: $showProStatus) {
+            ProStatusView().environmentObject(pm)
         }
 
         .alert("Delete All Things", isPresented: $showingDeleteAllAlert) {
@@ -202,6 +217,70 @@ private struct JoinProCard: View {
         .buttonStyle(.plain)
     }
 }
+
+/// 已訂閱時顯示的卡片（You're Pro）
+private struct ProActiveCard: View {
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .center, spacing: 16) {
+                Image("Star")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("You're Pro")
+                        .font(.title3).fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Text("Thank you for your support!")
+                        .foregroundStyle(.white.opacity(0.9))
+                        .font(.caption)
+                }
+
+                HStack(spacing: 6) {
+                    Text("Check")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Color(hex: "62AFF7"))
+                .clipShape(RoundedRectangle(cornerRadius: 100, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 100, style: .continuous)
+                        .stroke(Color(hex: "BCDFFF"), lineWidth: 1)
+                )
+
+            }
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.11, green: 0.46, blue: 0.98),
+                        Color(red: 0.17, green: 0.67, blue: 1.0)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// 簡單的導航到 Pro 狀態頁的輔助
+private extension SettingsView {
+    func navigateToProStatus() {
+        // 使用 sheet 呈現
+        showProStatus = true
+    }
+}
+
 
 extension Color {
     init(hex: String) {
