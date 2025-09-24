@@ -66,6 +66,18 @@ struct SettingsView: View {
                 }
             }
 
+            // MARK: - ICLOUD • DEBUG
+            // 建議僅在 DEBUG build 顯示；若要正式版也可顯示，移除 #if DEBUG 即可
+            #if DEBUG
+            Section("ICLOUD • DEBUG") {
+                NavigationLink {
+                    ICloudSyncDebugView()
+                } label: {
+                    Text("iCloud Debug Tools")
+                }
+            }
+            #endif
+
             // MARK: - JOIN PRO (單一欄位卡片式)
             Section {
                 if pm.isPro {
@@ -134,22 +146,13 @@ struct SettingsView: View {
             await deleteAllImageFiles()
             await MainActor.run {
                 items.removeAll()
-                saveItems()              // 這裡會觸發 iCloudSync.schedule(.itemsChanged)
+                saveItems()              // 這裡會觸發 iCloudSync.manualSync() → schedule(.full)
             }
 
-            // 再排程雲端刪除（協調器會合併 events，避免併發）
-            if iCloudSync.isEnabled {
-                // 若你要逐筆刪雲端記錄，照下面排程（或留給雲端端以 itemsChanged/pull 決定 tombstone）
-                // 這裡我們還是逐筆送出 delete 事件，確保雲端也清理
-                // ※ 注意：items 已清空，所以先抓一份舊陣列
-                // 如果你需要刪雲端，應在刪之前先複製 ids；這裡我們簡化為「只透過 itemsChanged 交由同步層處理」。
-                // 如需真正逐筆刪除，改在刪前保存 ids 然後 schedule(.deleteItem(id)).
-            }
+            // 協調器會統一處理同步，避免併發
+            // 若要逐筆刪 iCloud，請在刪除前先保存 ids，並對每個 id 呼叫 schedule(.deleteItem(id))
 
-            await MainActor.run {
-                isDeletingAll = false
-            }
-
+            await MainActor.run { isDeletingAll = false }
             ImageCacheManager.shared.invalidateCache()
         }
     }
