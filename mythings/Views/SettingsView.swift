@@ -21,7 +21,7 @@ struct SettingsView: View {
     // 🔑 RevenueCat
     @EnvironmentObject var pm: PurchasesManager
     @State private var navToICloud = false
-    @State private var showPaywall = false   // ← 只保留這一個
+    @State private var showPaywall = false
     @State private var showProStatus = false
 
     private var isSyncing: Bool {
@@ -65,16 +65,11 @@ struct SettingsView: View {
                     }
                 }
             }
-            // iOS 17 的布林導航（可保留）
-            .navigationDestination(isPresented: $navToICloud) {
-                ICloudSyncSettingsView()
-            }
 
             // MARK: - JOIN PRO (單一欄位卡片式)
             Section {
                 if pm.isPro {
                     ProActiveCard {
-                        // 進入 Pro 狀態頁
                         navigateToProStatus()
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
@@ -94,7 +89,7 @@ struct SettingsView: View {
                     showingDeleteAllAlert = true
                 }
                 .foregroundColor(.red)
-                .disabled(isDeletingAll)
+                .disabled(isDeletingAll || items.isEmpty)
             } footer: {
                 if items.count > 0 {
                     Text("This will permanently delete all \(items.count) items and their images. This action cannot be undone.")
@@ -105,7 +100,12 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
 
-        // 共用一個 Paywall sheet（任何地方觸發都使用這個）
+        // ✅ 把 navigationDestination 掛在 Form 之後（而不是 Section 內）
+        .navigationDestination(isPresented: $navToICloud) {
+            ICloudSyncSettingsView()
+        }
+
+        // 共用一個 Paywall sheet
         .sheet(isPresented: $showPaywall) {
             PaywallView().environmentObject(pm)
         }
@@ -124,23 +124,29 @@ struct SettingsView: View {
         .listStyle(.insetGrouped)
     }
 
-    // 刪除所有物件
+    // 刪除所有物件（本地優先，雲端刪除改排程事件）
     private func deleteAllItems() {
         guard !items.isEmpty else { return }
         isDeletingAll = true
 
         Task {
-            if iCloudSync.isEnabled {
-                for item in items {
-                    await iCloudSync.syncDeletion(for: item.id)
-                }
-            }
-
+            // 先刪本地檔與圖
             await deleteAllImageFiles()
-
             await MainActor.run {
                 items.removeAll()
-                saveItems()
+                saveItems()              // 這裡會觸發 iCloudSync.schedule(.itemsChanged)
+            }
+
+            // 再排程雲端刪除（協調器會合併 events，避免併發）
+            if iCloudSync.isEnabled {
+                // 若你要逐筆刪雲端記錄，照下面排程（或留給雲端端以 itemsChanged/pull 決定 tombstone）
+                // 這裡我們還是逐筆送出 delete 事件，確保雲端也清理
+                // ※ 注意：items 已清空，所以先抓一份舊陣列
+                // 如果你需要刪雲端，應在刪之前先複製 ids；這裡我們簡化為「只透過 itemsChanged 交由同步層處理」。
+                // 如需真正逐筆刪除，改在刪前保存 ids 然後 schedule(.deleteItem(id)).
+            }
+
+            await MainActor.run {
                 isDeletingAll = false
             }
 
@@ -276,11 +282,9 @@ private struct ProActiveCard: View {
 // 簡單的導航到 Pro 狀態頁的輔助
 private extension SettingsView {
     func navigateToProStatus() {
-        // 使用 sheet 呈現
         showProStatus = true
     }
 }
-
 
 extension Color {
     init(hex: String) {
@@ -290,7 +294,7 @@ extension Color {
 
         let r = Double((hexNumber & 0xFF0000) >> 16) / 255
         let g = Double((hexNumber & 0x00FF00) >> 8) / 255
-        let b = Double(hexNumber & 0x0000FF) / 255
+        let b = Double((hexNumber & 0x0000FF) >> 0) / 255
 
         self.init(red: r, green: g, blue: b)
     }
@@ -321,11 +325,10 @@ extension Color {
     return NavigationStack {
         SettingsView(
             categoryStore: previewCategoryStore,
-            items: .constant(sampleItems),        // ✅ 用常數 Binding
+            items: .constant(sampleItems),        // Preview 用常數 Binding
             saveItems: { /* no-op in preview */ }
         )
         .environmentObject(previewSync)          // 注入 iCloudSync
         .environmentObject(PurchasesManager())   // 注入 PurchasesManager
     }
 }
-

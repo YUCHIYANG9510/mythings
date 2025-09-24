@@ -349,10 +349,8 @@ struct ContentView: View {
         do {
             let data = try JSONEncoder().encode(items)
             try data.write(to: savePath)
-
-            // 只有 Pro 會啟用 iCloud
             if iCloudSync.isEnabled {
-                iCloudSync.manualSync()
+                iCloudSync.schedule(.itemsChanged)
             }
         } catch {
             print("儲存失敗：\(error)")
@@ -360,16 +358,16 @@ struct ContentView: View {
     }
 
     private func loadItems() {
+        // 立即離線可用
+        loadItemsFromLocal()
+
         if iCloudSync.isEnabled {
-            iCloudSync.manualSync()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                loadItemsFromLocal()
-            }
-        } else {
-            loadItemsFromLocal()
+            iCloudSync.schedule(.full)
+            // 可選：監聽狀態回到 success 時再 loadItemsFromLocal()
+            // .onReceive 或用 .onChange 監控 iCloudSync.syncStatus
         }
     }
-
+    
     private func loadItemsFromLocal() {
         do {
             let data = try Data(contentsOf: savePath)

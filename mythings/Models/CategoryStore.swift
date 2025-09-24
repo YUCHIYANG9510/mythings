@@ -70,10 +70,8 @@ class CategoryStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(categories)
             try data.write(to: savePath)
-
-            // 觸發 iCloud 同步（這裡在 MainActor，因此可直接呼叫）
             if iCloudSync.isEnabled {
-                iCloudSync.manualSync()
+                iCloudSync.schedule(.categoriesChanged)
             }
         } catch {
             print("儲存分類失敗：\(error)")

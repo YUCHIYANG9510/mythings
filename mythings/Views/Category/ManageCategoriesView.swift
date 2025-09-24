@@ -1,3 +1,4 @@
+//
 //  ManageCategoriesView.swift
 //  mythings
 //
@@ -8,7 +9,7 @@ import SwiftUI
 
 struct ManageCategoriesView: View {
     @ObservedObject var categoryStore: CategoryStore
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
 
     // 🔑 RevenueCat：用於分類數量 gating（免費上限 6）
@@ -19,35 +20,35 @@ struct ManageCategoriesView: View {
     @State private var showAddCategoryView = false
     @State private var editingCategory: Category? = nil
 
-    // 確認刪除所需狀態
+    // 單筆刪除
     @State private var pendingDelete: IndexSet? = nil
     @State private var showDeleteAlert = false
+
+    // 全刪
     @State private var showResetAllAlert = false
+
+    // MARK: - Derived States（降低型別推斷負擔）
+    private var isEditing: Bool { (editMode?.wrappedValue.isEditing ?? false) }
+    private var canAddCategory: Bool { pm.canAddCategory(currentCount: categoryStore.categories.count) }
+    private var showProBadgeOnNew: Bool { !pm.isPro && categoryStore.categories.count >= 6 }
+    private var resetAlertMessage: String {
+        iCloudSync.isEnabled
+        ? "Clear all categories locally. Also clears iCloud and resyncs."
+        : "Clear all categories locally."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
 
+            // 列表
             List {
                 Section {
                     ForEach(categoryStore.categories) { category in
-                        HStack(spacing: 16) {
-                            Text(category.emoji)
-                                .font(.system(size: 28))
-                                .frame(width: 32, height: 32)
-
-                            Text(category.name)
-                                .font(.body)
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 2.5)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            editingCategory = category
-                        }
+                        CategoryRow(category: category)
+                            .contentShape(Rectangle())
+                            .onTapGesture { editingCategory = category }
                     }
                     .onDelete { indexSet in
-                        // 先暫存，等使用者確認
                         pendingDelete = indexSet
                         showDeleteAlert = true
                     }
@@ -56,70 +57,36 @@ struct ManageCategoriesView: View {
             }
             .listStyle(.insetGrouped)
 
-            // 僅在編輯模式顯示 Reset，放在 New Category 之上
-            if editMode?.wrappedValue.isEditing == true {
-                Button(role: .destructive) {
+            // 編輯模式才顯示全刪
+            if isEditing {
+                DeleteAllCategoriesButton {
                     showResetAllAlert = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "trash.fill")
-                            .imageScale(.large)
-                        Text("Delete All Categories")
-                            .font(.title3.weight(.semibold))
-                        Spacer()
-                    }
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Button {
-                // ✅ 限制：免費用戶最多 6 個分類；超過則彈付費牆
-                if pm.canAddCategory(currentCount: categoryStore.categories.count) {
-                    showAddCategoryView = true
-                } else {
-                    showPaywall = true
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "plus.circle.fill")
-                        .imageScale(.large)
-                    Text("New Category")
-                        .font(.title3.weight(.semibold))
-
-                    // 小提示：非 Pro 且已達上限時顯示 Pro badge
-                    if !pm.isPro && categoryStore.categories.count >= 6 {
-                        Spacer()
-                        Text("Pro")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.secondary.opacity(0.15), in: Capsule())
-                    } else {
-                        Spacer()
-                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+                .padding(.bottom, 4)
             }
-            .buttonStyle(.plain)
+
+            // 新增分類（含 Pro 限制徽章）
+            NewCategoryButton(
+                showProBadge: showProBadgeOnNew,
+                onTap: handleTapNewCategory
+            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
 
             Spacer(minLength: 0)
         }
         .navigationTitle("Manage Categories")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                EditButton()
-            }
+            ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
         }
+
+        // Add / Edit
         .sheet(isPresented: $showAddCategoryView) {
             AddCategoryView(categoryStore: categoryStore)
                 .presentationDetents([.fraction(0.7)])
                 .presentationCornerRadius(40)
-                // （可選）若擔心其它入口能新增分類，可在 AddCategoryView 的保存動作再檢一次 pm.canAddCategory
         }
         .sheet(item: $editingCategory) { category in
             EditCategoryView(categoryStore: categoryStore, category: category)
@@ -127,49 +94,123 @@ struct ManageCategoriesView: View {
                 .presentationCornerRadius(40)
         }
 
-        // 付費牆（當達到上限時彈出）
+        // 付費牆
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
-                .environmentObject(pm)
+            PaywallView().environmentObject(pm)
         }
 
-        // 刪除確認對話框
+        // 單筆刪除確認
         .alert("Delete Category?", isPresented: $showDeleteAlert) {
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-            Button("Delete", role: .destructive) {
-                if let idx = pendingDelete {
-                    categoryStore.deleteCategory(at: idx)
-                }
-                pendingDelete = nil
-            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+            Button("Delete", role: .destructive) { confirmDeleteSelected() }
         } message: {
             Text("This action cannot be undone.")
         }
 
-        // Reset（本機 + iCloud）確認對話框
+        // 全刪確認
         .alert("Reset Categories?", isPresented: $showResetAllAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
-                Task { @MainActor in
-                    // 1) 清本機
-                    categoryStore.categories.removeAll()
-
-                    // 2) 僅在啟用 iCloud（= Pro）時清雲端，避免免費用戶觸發雲端操作
-                    if iCloudSync.isEnabled {
-                        await iCloudSync.purgeAllCategoriesCloud()
-                        iCloudSync.manualSync()
-                    }
-                }
-            }
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) { resetAllCategories() }
         } message: {
-            Text("Clear all categories locally.\(iCloudSync.isEnabled ? " Also clears iCloud and resyncs." : "")")
+            Text(resetAlertMessage)
         }
     }
-    
+
+    // MARK: - Actions
+
+    private func handleTapNewCategory() {
+        if canAddCategory {
+            showAddCategoryView = true
+        } else {
+            showPaywall = true
+        }
+    }
+
+    private func confirmDeleteSelected() {
+        if let idx = pendingDelete {
+            categoryStore.deleteCategory(at: idx)
+        }
+        pendingDelete = nil
+    }
+
+    @MainActor
+    private func resetAllCategories() {
+        // 1) 清本機
+        categoryStore.categories.removeAll()
+
+        // 2) 選擇性清雲端 + 排程一次完整同步（協調器會序列化與合併事件）
+        if iCloudSync.isEnabled {
+            Task {
+                await iCloudSync.purgeAllCategoriesCloud()   // 需要在 iCloudSyncManager 補上公開方法
+                iCloudSync.schedule(.full)
+            }
+        }
+    }
+
     private func moveCategories(from source: IndexSet, to destination: Int) {
         categoryStore.moveCategory(from: source, to: destination)
+    }
+}
+
+// MARK: - Subviews
+
+private struct CategoryRow: View {
+    let category: Category
+    var body: some View {
+        HStack(spacing: 16) {
+            Text(category.emoji)
+                .font(.system(size: 28))
+                .frame(width: 32, height: 32)
+            Text(category.name)
+                .font(.body)
+            Spacer()
+        }
+        .padding(.vertical, 2.5)
+    }
+}
+
+private struct NewCategoryButton: View {
+    let showProBadge: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .imageScale(.large)
+                Text("New Category")
+                    .font(.title3.weight(.semibold))
+
+                if showProBadge {
+                    Spacer()
+                    Text("Pro")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                } else {
+                    Spacer()
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct DeleteAllCategoriesButton: View {
+    let onTap: () -> Void
+    var body: some View {
+        Button(role: .destructive, action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "trash.fill")
+                    .imageScale(.large)
+                Text("Delete All Categories")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+            }
+            .foregroundStyle(.red)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -184,7 +225,6 @@ struct ManageCategoriesView: View {
         Category(name: "Bags", emoji: "🎒")
     ]
 
-    // ✅ 預覽注入必要的 EnvironmentObject，避免崩潰
     return NavigationStack {
         ManageCategoriesView(categoryStore: previewStore)
     }

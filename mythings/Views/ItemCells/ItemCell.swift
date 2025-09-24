@@ -38,17 +38,13 @@ struct ItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                Task {
-                    // 先同步刪除到雲端（如果啟用）
-                    if iCloudSync.isEnabled {
-                        await iCloudSync.syncDeletion(for: item.id)
-                    }
-                    
-                    // 再從本機移除
-                    await MainActor.run {
-                        items.removeAll { $0.id == item.id }
-                        saveItems()
-                    }
+                // 先本地刪除 + 落盤（不會直接觸發同步，僅送出 itemsChanged 事件）
+                items.removeAll { $0.id == item.id }
+                saveItems()
+
+                // 再交給協調器安排雲端刪除；與 itemsChanged 會被合併處理，避免併發
+                if iCloudSync.isEnabled {
+                    iCloudSync.schedule(.deleteItem(item.id))
                 }
             }
         }
