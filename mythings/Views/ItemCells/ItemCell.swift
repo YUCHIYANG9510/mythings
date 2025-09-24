@@ -15,6 +15,8 @@ struct ItemCell: View {
     @Binding var items: [Item]
     let saveItems: () -> Void
     
+    @EnvironmentObject private var iCloudSync: iCloudSyncManager
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ItemImageView(imageName: item.imageName)
@@ -36,8 +38,18 @@ struct ItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                items.removeAll { $0.id == item.id }
-                saveItems()
+                Task {
+                    // 先同步刪除到雲端（如果啟用）
+                    if iCloudSync.isEnabled {
+                        await iCloudSync.syncDeletion(for: item.id)
+                    }
+                    
+                    // 再從本機移除
+                    await MainActor.run {
+                        items.removeAll { $0.id == item.id }
+                        saveItems()
+                    }
+                }
             }
         }
         // ✅ 加上拖曳&放置
