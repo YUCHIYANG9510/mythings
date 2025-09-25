@@ -120,9 +120,9 @@ struct PaywallView: View {
             .padding(.horizontal, 20)
 
             HStack(spacing: 18) {
-                Link("Privacy Policy", destination: URL(string: "https://example.com/privacy")!)
+                Link("Privacy Policy", destination: URL(string: "https://www.notion.so/Privacy-Policy-2783fc7b7fd7807d89cffca2bb3d12a0?source=copy_link")!)
                 Circle().frame(width: 3, height: 3).foregroundStyle(.tertiary)
-                Link("Terms", destination: URL(string: "https://example.com/terms")!)
+                Link("Terms", destination: URL(string: "https://www.notion.so/Terms-of-Use-2783fc7b7fd7807786b0f552e7a58654?source=copy_link")!)
                 Circle().frame(width: 3, height: 3).foregroundStyle(.tertiary)
                 Button("Restore purchases") {
                     Task { await pm.restore(); if pm.isPro { dismiss() } }
