@@ -45,7 +45,7 @@ enum SyncError: Error, LocalizedError {
     case dataCorrupted(String)
     case quotaExceeded
     case authenticationFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .iCloudUnavailable:
@@ -217,7 +217,7 @@ final class iCloudSyncManager: ObservableObject {
     private var localCategoriesURL: URL { documentsDir.appendingPathComponent("categories.json") }
     private var localImagesDir: URL { imageStore.imagesDir }
 
-    // 🔑 新增：單一協調器
+    // 🔑 單一協調器
     private let coordinator = SyncCoordinator()
 
     // MARK: - 增量同步相關屬性
@@ -230,9 +230,15 @@ final class iCloudSyncManager: ObservableObject {
         get { UserDefaults.standard.object(forKey: "icloud.sync.categories.lastDate") as? Date ?? .distantPast }
         set { UserDefaults.standard.set(newValue, forKey: "icloud.sync.categories.lastDate") }
     }
-    
+
+    // ⭐️ 新增：追蹤 DeletedItem（墓碑）最後同步時間
+    private var lastDeletedSyncDate: Date {
+        get { UserDefaults.standard.object(forKey: "icloud.sync.deleted.lastDate") as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: "icloud.sync.deleted.lastDate") }
+    }
+
     // 同步策略常數
-    private let fullSyncThreshold: TimeInterval = 24 * 60 * 60 // 24小時
+    private let fullSyncThreshold: TimeInterval = 24 * 60 * 60 // 24 小時
     private let maxRetryAttempts: Int = 3
     private let batchSize: Int = 300
 
@@ -415,7 +421,7 @@ final class iCloudSyncManager: ObservableObject {
     private func runOptimizedSync() async throws {
         let timeSinceLastSync = Date().timeIntervalSince(lastSyncDate ?? .distantPast)
         let shouldDoFullSync = timeSinceLastSync > fullSyncThreshold || lastSyncDate == nil
-        
+
         if shouldDoFullSync {
             try await runFullSync()
         } else {
@@ -428,10 +434,14 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    // MARK: - 增量同步
+    // MARK: - 增量同步（已加入墓碑處理）
     private func runIncrementalSync() async throws {
         try Task.checkCancellation()
         try ensureLocalFolders()
+
+        // ⭐️ 先套用墓碑，避免把已刪的東西從本機推回雲端
+        try await pullDeletedItemsSince(lastDeletedSyncDate)
+
         try await pushLocalChanges()
         try await pullRemoteChanges()
     }
@@ -439,16 +449,16 @@ final class iCloudSyncManager: ObservableObject {
     private func pushLocalChanges() async throws {
         let items = loadLocalItems()
         let categories = loadLocalCategories()
-        
+
         let recentThreshold = Date().addingTimeInterval(-7 * 24 * 60 * 60)
         let recentItems = items.filter { item in
             (item.date ?? .distantPast) > max(recentThreshold, lastItemSyncDate)
         }
-        
+
         if !recentItems.isEmpty {
             try await pushItemsWithRetry(recentItems)
         }
-        
+
         if !categories.isEmpty {
             try await pushCategoriesWithRetry(categories)
         }
@@ -457,7 +467,7 @@ final class iCloudSyncManager: ObservableObject {
     private func pullRemoteChanges() async throws {
         try await pullItemsSince(lastItemSyncDate)
         try await pullCategoriesSince(lastCategorySyncDate)
-        
+
         let now = Date()
         lastItemSyncDate = now
         lastCategorySyncDate = now
@@ -466,7 +476,7 @@ final class iCloudSyncManager: ObservableObject {
     private func pullItemsSince(_ since: Date) async throws {
         let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
         let query = CKQuery(recordType: "Item", predicate: predicate)
-        
+
         if supportsOrderIndex {
             query.sortDescriptors = [
                 NSSortDescriptor(key: "orderIndex", ascending: true),
@@ -475,16 +485,16 @@ final class iCloudSyncManager: ObservableObject {
         } else {
             query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: false)]
         }
-        
+
         var allChanges: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
-        
+
         repeat {
             let page = try await performQuery(query: query, cursor: cursor)
             allChanges.append(contentsOf: page.records)
             cursor = page.cursor
         } while cursor != nil
-        
+
         guard !allChanges.isEmpty else { return }
         try await mergeItemChanges(allChanges)
     }
@@ -492,7 +502,7 @@ final class iCloudSyncManager: ObservableObject {
     private func pullCategoriesSince(_ since: Date) async throws {
         let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
         let query = CKQuery(recordType: "Category", predicate: predicate)
-        
+
         if supportsOrderIndex {
             query.sortDescriptors = [
                 NSSortDescriptor(key: "orderIndex", ascending: true),
@@ -501,23 +511,23 @@ final class iCloudSyncManager: ObservableObject {
         } else {
             query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: false)]
         }
-        
+
         var allChanges: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
-        
+
         repeat {
             let page = try await performQuery(query: query, cursor: cursor)
             allChanges.append(contentsOf: page.records)
             cursor = page.cursor
         } while cursor != nil
-        
+
         guard !allChanges.isEmpty else { return }
         try await mergeCategoryChanges(allChanges)
     }
 
     private func mergeItemChanges(_ changes: [CKRecord]) async throws {
         var local = loadLocalItems()
-        
+
         for record in changes {
             guard
                 let idStr = record["id"] as? String,
@@ -527,10 +537,10 @@ final class iCloudSyncManager: ObservableObject {
                 let name = record["name"] as? String,
                 let price = record["price"] as? String
             else { continue }
-            
+
             let date = record["date"] as? Date
             var finalImageName = ""
-            
+
             if let asset = record["image"] as? CKAsset, let cloudURL = asset.fileURL {
                 finalImageName = "\(uuid.uuidString).png"
                 let target = imageStore.fileURL(for: finalImageName)
@@ -545,7 +555,7 @@ final class iCloudSyncManager: ObservableObject {
                     finalImageName = ""
                 }
             }
-            
+
             let updatedItem = Item(
                 id: uuid,
                 imageName: finalImageName,
@@ -555,28 +565,28 @@ final class iCloudSyncManager: ObservableObject {
                 price: price,
                 date: date
             )
-            
+
             if let index = local.firstIndex(where: { $0.id == uuid }) {
                 local[index] = updatedItem
             } else {
                 local.append(updatedItem)
             }
         }
-        
+
         saveLocalItems(local)
     }
 
     private func mergeCategoryChanges(_ changes: [CKRecord]) async throws {
         var local = loadLocalCategories()
-        
+
         for record in changes {
             guard
                 let idStr = record["id"] as? String,
                 let uuid = UUID(uuidString: idStr),
                 let name = record["name"] as? String
             else { continue }
-            
-            let emoji = (record["emoji"] as? String) ?? ""
+
+        let emoji = (record["emoji"] as? String) ?? ""
             let updatedCategory = Category(id: uuid, name: name, emoji: emoji)
 
             if let index = local.firstIndex(where: { $0.id == uuid }) {
@@ -585,14 +595,17 @@ final class iCloudSyncManager: ObservableObject {
                 local.append(updatedCategory)
             }
         }
-        
+
         saveLocalCategories(local)
     }
 
-    // MARK: - 完整同步
+    // MARK: - 完整同步（已加入墓碑處理）
     private func runFullSync() async throws {
         try Task.checkCancellation()
         try ensureLocalFolders()
+
+        // ⭐️ 先套用墓碑，防止舊裝置把東西又推回來
+        try await pullAllDeletedItems()
 
         let items = loadLocalItems()
         let cats = loadLocalCategories()
@@ -635,12 +648,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func pushCategoriesWithRetry(_ categories: [Category]) async throws {
-        // ⚠️ 重要修正：
-        // 以前這裡會呼叫 cleanupAndDeleteRemoteCategories(notInLocal:)
-        // 去刪除「不在本機集合」的雲端分類。這在多裝置尚未拉取到對方新資料時，會誤刪對方剛新增的分類。
-        // 因此在「一般同步」中完全移除此步驟。重複紀錄的清理改由 pullCategories() 內的
-        // cleanupDuplicateCategoryRecords(...) 安全處理。
-
         for (index, cat) in categories.enumerated() {
             try Task.checkCancellation()
             var attempts = 0
@@ -659,7 +666,6 @@ final class iCloudSyncManager: ObservableObject {
             }
         }
     }
-
 
     // MARK: - Push one item
 
@@ -760,10 +766,10 @@ final class iCloudSyncManager: ObservableObject {
                 }
             }
 
-            if let idx = local.firstIndex(where: { $0.id == uuid }) {
-                local[idx] = Item(
+            if let idxLocal = local.firstIndex(where: { $0.id == uuid }) {
+                local[idxLocal] = Item(
                     id: uuid,
-                    imageName: finalImageName.isEmpty ? local[idx].imageName : finalImageName,
+                    imageName: finalImageName.isEmpty ? local[idxLocal].imageName : finalImageName,
                     brand: brand,
                     category: category,
                     name: name,
@@ -894,9 +900,7 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    // NOTE:
-    // 僅供「Reset / 清庫」情境使用（例如使用者明確要把雲端分類清成和本機一致）。
-    // 一般同步流程切勿呼叫，否則會在多裝置尚未拉取新資料前就把對方的雲端資料刪掉。
+    // NOTE: 僅供「Reset / 清庫」情境使用（一般同步不要呼叫）
     private func cleanupAndDeleteRemoteCategories(notInLocal localNameKeys: Set<String>) async throws {
         let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
         var all: [CKRecord] = []
@@ -941,16 +945,227 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
+    // MARK: - Public maintenance / inspection
+
+    /// 回傳 iCloud（CloudKit Private DB）目前的 Item/Category 總數
+    func countAllRecords() async -> (items: Int, categories: Int) {
+        let items = await countItemRecords()
+        let categories = await countCategoryRecords()
+        return (items, categories)
+    }
+
+    func countItemRecords() async -> Int { await countRecords(of: "Item") }
+    func countCategoryRecords() async -> Int { await countRecords(of: "Category") }
+
+    func purgeAllItemsCloud() async {
+        do {
+            let ids = try await fetchAllRecordIDs(of: "Item")
+            guard !ids.isEmpty else {
+                print("ℹ️ No Item records to purge.")
+                return
+            }
+            try await deleteRecordsInBatches(ids: ids)
+            print("✅ Purged all Item records from iCloud: \(ids.count)")
+        } catch {
+            print("❌ Purge items from iCloud failed: \(error)")
+        }
+    }
+
+    func purgeAllCloud() async {
+        await purgeAllItemsCloud()
+        await purgeAllCategoriesCloud()
+    }
+
+    func wipeLocalStore() {
+        // 刪 JSON
+        try? fm.removeItem(at: localItemsURL)
+        try? fm.removeItem(at: localCategoriesURL)
+
+        // 刪圖片（僅刪檔案，不刪資料夾）
+        if let files = try? fm.contentsOfDirectory(at: localImagesDir, includingPropertiesForKeys: nil) {
+            for url in files { try? fm.removeItem(at: url) }
+        }
+
+        // 重置同步狀態（下次觸發會走 full）
+        lastSyncDate = nil
+        UserDefaults.standard.removeObject(forKey: "icloud.sync.lastDate")
+        lastItemSyncDate = .distantPast
+        lastCategorySyncDate = .distantPast
+        lastDeletedSyncDate = .distantPast
+
+        print("🧹 Wiped local store (items.json, categories.json, images/*) and reset sync timestamps.")
+    }
+
+    // MARK: - Private helpers for counts
+
+    private func countRecords(of recordType: String) async -> Int {
+        do {
+            var total = 0
+            let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+            var cursor: CKQueryOperation.Cursor?
+            repeat {
+                let page = try await performQuery(query: query, cursor: cursor)
+                total += page.records.count
+                cursor = page.cursor
+            } while cursor != nil
+            return total
+        } catch {
+            print("❌ countRecords(\(recordType)) failed: \(error)")
+            return 0
+        }
+    }
+
+    private func fetchAllRecordIDs(of recordType: String) async throws -> [CKRecord.ID] {
+        var ids: [CKRecord.ID] = []
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        var cursor: CKQueryOperation.Cursor?
+        repeat {
+            let page = try await performQuery(query: query, cursor: cursor)
+            ids.append(contentsOf: page.records.map { $0.recordID })
+            cursor = page.cursor
+        } while cursor != nil
+        return Array(Set(ids))
+    }
+
+    /// 刪除 iCloud 上所有 Category 記錄（不影響 Items）
+    func purgeAllCategoriesCloud() async {
+        do {
+            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
+            var all: [CKRecord] = []
+            var cursor: CKQueryOperation.Cursor?
+            repeat {
+                let page = try await performQuery(query: query, cursor: cursor)
+                all.append(contentsOf: page.records)
+                cursor = page.cursor
+            } while cursor != nil
+
+            let ids = all.map { $0.recordID }
+            try await deleteRecordsInBatches(ids: ids)
+            print("✅ Purged all Category records from iCloud: \(ids.count)")
+        } catch {
+            print("❌ Purge categories from iCloud failed: \(error)")
+        }
+    }
+
+    // MARK: - Delete（協調器呼叫）— 已加入墓碑 + 全面清除
+    private func deleteItemOnCloud(_ itemId: UUID) async throws {
+        // 0) 先寫入「墓碑」DeletedItem：deleted-<uuid>
+        do {
+            let did = CKRecord.ID(recordName: "deleted-\(itemId.uuidString)")
+            let tomb = try await fetchOrCreate(recordType: "DeletedItem", id: did)
+            tomb["id"] = itemId.uuidString as CKRecordValue
+            tomb["updatedAt"] = Date() as CKRecordValue
+            _ = try await dbSave(tomb)
+            print("🪦 Upserted DeletedItem tombstone for id=\(itemId)")
+        } catch {
+            print("❗️Failed to upsert DeletedItem tombstone: \(error)")
+            // 不阻斷：即使墓碑寫失敗，仍嘗試刪 iCloud Item
+        }
+
+        // 1) 嘗試刪除新命名規則的 recordName（"item-<uuid>"）
+        let rid = CKRecord.ID(recordName: "item-\(itemId.uuidString)")
+        do {
+            try await privateDB.deleteRecord(withID: rid)
+            print("✅ Deleted item from iCloud by recordID: \(itemId)")
+        } catch let ck as CKError {
+            if ck.code != .unknownItem { throw ck } // 其他錯誤直接拋出
+            // unknownItem → 可能是舊命名，進入後備方案
+        } catch {
+            throw error
+        }
+
+        // 2) 後備：用欄位查詢把 legacy/重複的 Item 一次清乾淨
+        let predicate = NSPredicate(format: "id == %@", itemId.uuidString)
+        let query = CKQuery(recordType: "Item", predicate: predicate)
+
+        var idsToDelete: [CKRecord.ID] = []
+        var cursor: CKQueryOperation.Cursor?
+
+        repeat {
+            let page = try await performQuery(query: query, cursor: cursor)
+            idsToDelete.append(contentsOf: page.records.map { $0.recordID })
+            cursor = page.cursor
+        } while cursor != nil
+
+        if !idsToDelete.isEmpty {
+            try await deleteRecordsInBatches(ids: Array(Set(idsToDelete)))
+            print("✅ Deleted \(idsToDelete.count) legacy Item record(s) for id=\(itemId)")
+        } else {
+            print("ℹ️ No extra Item records found for id=\(itemId)")
+        }
+    }
+
+    // MARK: - DeletedItem（墓碑）支援
+
+    // 讀取 DeletedItem（墓碑）後，把本機相同 id 的 Item 移除
+    private func pullDeletedItemsSince(_ since: Date) async throws {
+        let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
+        let query = CKQuery(recordType: "DeletedItem", predicate: predicate)
+        var deletedIDs: [UUID] = []
+
+        var cursor: CKQueryOperation.Cursor?
+        repeat {
+            let page = try await performQuery(query: query, cursor: cursor)
+            for rec in page.records {
+                if let idStr = rec["id"] as? String, let uuid = UUID(uuidString: idStr) {
+                    deletedIDs.append(uuid)
+                }
+            }
+            cursor = page.cursor
+        } while cursor != nil
+
+        guard !deletedIDs.isEmpty else { return }
+        try await removeLocalItems(withIDs: Set(deletedIDs))
+        lastDeletedSyncDate = Date()
+    }
+
+    // 從本機 items.json 移除指定 IDs 並落盤
+    private func removeLocalItems(withIDs ids: Set<UUID>) async throws {
+        var local = loadLocalItems()
+        let before = local.count
+        local.removeAll { ids.contains($0.id) }
+        if local.count != before {
+            saveLocalItems(local)
+            print("🧹 Removed \(before - local.count) local item(s) by DeletedItem tombstones.")
+        }
+    }
+
+    // 全量抓取 DeletedItem（給 full sync 用）
+    private func pullAllDeletedItems() async throws {
+        let query = CKQuery(recordType: "DeletedItem", predicate: NSPredicate(value: true))
+        var deletedIDs: [UUID] = []
+        var cursor: CKQueryOperation.Cursor?
+        repeat {
+            let page = try await performQuery(query: query, cursor: cursor)
+            for rec in page.records {
+                if let idStr = rec["id"] as? String, let uuid = UUID(uuidString: idStr) {
+                    deletedIDs.append(uuid)
+                }
+            }
+            cursor = page.cursor
+        } while cursor != nil
+        guard !deletedIDs.isEmpty else { return }
+        try await removeLocalItems(withIDs: Set(deletedIDs))
+        lastDeletedSyncDate = Date()
+    }
+
+    // MARK: - CK helpers
+
+    // 一次刪多筆紀錄，避免單筆呼叫過多導致 rate limit
     private func deleteRecordsInBatches(ids: [CKRecord.ID], batchSize: Int = 300) async throws {
         guard !ids.isEmpty else { return }
         let unique = Array(Set(ids))
-        let total = unique.count
         var index = 0
-        while index < total {
-            let end = min(index + batchSize, total)
+        while index < unique.count {
+            let end = min(index + batchSize, unique.count)
             let slice = Array(unique[index..<end])
+
             try await withCheckedThrowingContinuation { cont in
                 let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: slice)
+                // 盡量溫和些
+                op.isAtomic = false
+                op.qualityOfService = .utility
+
                 op.modifyRecordsResultBlock = { result in
                     switch result {
                     case .success:
@@ -961,12 +1176,12 @@ final class iCloudSyncManager: ObservableObject {
                 }
                 self.privateDB.add(op)
             }
+
             index = end
         }
     }
 
-    // MARK: - CK helpers
-
+    
     private func dbSave(_ record: CKRecord) async throws -> CKRecord {
         try await withCheckedThrowingContinuation { cont in
             privateDB.save(record) { saved, error in
@@ -1046,127 +1261,5 @@ final class iCloudSyncManager: ObservableObject {
         print("items.json exists: \(fm.fileExists(atPath: localItemsURL.path))")
         print("categories.json exists: \(fm.fileExists(atPath: localCategoriesURL.path))")
         print("=== End Debug ===")
-    }
-
-    // MARK: - Public maintenance
-    
-    // MARK: - Public inspection / purge helpers
-
-    /// 回傳 iCloud（CloudKit Private DB）目前的 Item/Category 總數
-    func countAllRecords() async -> (items: Int, categories: Int) {
-        let items = await countItemRecords()
-        let categories = await countCategoryRecords()
-        return (items, categories)
-    }
-
-    /// 計算 Item 總數
-    func countItemRecords() async -> Int {
-        await countRecords(of: "Item")
-    }
-
-    /// 計算 Category 總數
-    func countCategoryRecords() async -> Int {
-        await countRecords(of: "Category")
-    }
-
-    /// 清空 iCloud 上所有 Items（不影響 Categories）
-    func purgeAllItemsCloud() async {
-        do {
-            let ids = try await fetchAllRecordIDs(of: "Item")
-            guard !ids.isEmpty else {
-                print("ℹ️ No Item records to purge.")
-                return
-            }
-            try await deleteRecordsInBatches(ids: ids)
-            print("✅ Purged all Item records from iCloud: \(ids.count)")
-        } catch {
-            print("❌ Purge items from iCloud failed: \(error)")
-        }
-    }
-
-    /// 一鍵清空 iCloud（Items + Categories）
-    func purgeAllCloud() async {
-        await purgeAllItemsCloud()
-        await purgeAllCategoriesCloud()
-    }
-
-    /// （選用）清空本機資料與圖片，並重置同步時間戳
-    func wipeLocalStore() {
-        // 刪 JSON
-        try? fm.removeItem(at: localItemsURL)
-        try? fm.removeItem(at: localCategoriesURL)
-
-        // 刪圖片（僅刪檔案，不刪資料夾）
-        if let files = try? fm.contentsOfDirectory(at: localImagesDir, includingPropertiesForKeys: nil) {
-            for url in files { try? fm.removeItem(at: url) }
-        }
-
-        // 重置同步狀態（下次觸發會走 full）
-        lastSyncDate = nil
-        UserDefaults.standard.removeObject(forKey: "icloud.sync.lastDate")
-        // 這兩個 setter 會同步寫回 UserDefaults
-        lastItemSyncDate = .distantPast
-        lastCategorySyncDate = .distantPast
-
-        print("🧹 Wiped local store (items.json, categories.json, images/*) and reset sync timestamps.")
-    }
-
-    // MARK: - Private helpers for counts
-
-    private func countRecords(of recordType: String) async -> Int {
-        do {
-            var total = 0
-            let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-            var cursor: CKQueryOperation.Cursor?
-            repeat {
-                let page = try await performQuery(query: query, cursor: cursor)
-                total += page.records.count
-                cursor = page.cursor
-            } while cursor != nil
-            return total
-        } catch {
-            print("❌ countRecords(\(recordType)) failed: \(error)")
-            return 0
-        }
-    }
-
-    private func fetchAllRecordIDs(of recordType: String) async throws -> [CKRecord.ID] {
-        var ids: [CKRecord.ID] = []
-        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-        var cursor: CKQueryOperation.Cursor?
-        repeat {
-            let page = try await performQuery(query: query, cursor: cursor)
-            ids.append(contentsOf: page.records.map { $0.recordID })
-            cursor = page.cursor
-        } while cursor != nil
-        return Array(Set(ids))
-    }
-
-    
-    /// 刪除 iCloud 上所有 Category 記錄（不影響 Items）
-    func purgeAllCategoriesCloud() async {
-        do {
-            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
-            var all: [CKRecord] = []
-            var cursor: CKQueryOperation.Cursor?
-            repeat {
-                let page = try await performQuery(query: query, cursor: cursor)
-                all.append(contentsOf: page.records)
-                cursor = page.cursor
-            } while cursor != nil
-
-            let ids = all.map { $0.recordID }
-            try await deleteRecordsInBatches(ids: ids)
-            print("✅ Purged all Category records from iCloud: \(ids.count)")
-        } catch {
-            print("❌ Purge categories from iCloud failed: \(error)")
-        }
-    }
-
-    // MARK: - Delete（改為內部由協調器呼叫）
-    private func deleteItemOnCloud(_ itemId: UUID) async throws {
-        let rid = CKRecord.ID(recordName: "item-\(itemId.uuidString)")
-        try await privateDB.deleteRecord(withID: rid)
-        print("✅ Deleted item from iCloud: \(itemId)")
     }
 }

@@ -9,7 +9,7 @@ import Network
 struct ICloudSyncSettingsView: View {
     @EnvironmentObject var iCloudSync: iCloudSyncManager
 
-    // 想隱藏「網路」這列就改成 false
+    // Set to false to hide the "Network" row
     private let showNetworkRow = false
 
     @State private var showingCloudAlert = false
@@ -21,20 +21,20 @@ struct ICloudSyncSettingsView: View {
     private let lastSyncFormatter: DateFormatter = {
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
-        df.locale = Locale(identifier: "zh_TW")
+        df.locale = Locale(identifier: "en_US")
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return df
     }()
 
     // MARK: - Derived UI Text
     private var syncStatusText: String {
-        guard iCloudSync.isEnabled else { return "同步已停用" }
+        guard iCloudSync.isEnabled else { return "Sync Disabled" }
         switch iCloudSync.syncStatus {
-        case .syncing: return "正在同步…"
-        case .success: return "同步成功"
+        case .syncing: return "Syncing…"
+        case .success: return "Sync Successful"
         case .idle:
-            return (iCloudSync.lastSyncDate == nil) ? "尚未同步" : "待命中"
-        case .error: return "發生錯誤"
+            return (iCloudSync.lastSyncDate == nil) ? "Not Synced Yet" : "Idle"
+        case .error: return "Error Occurred"
         }
     }
 
@@ -48,46 +48,46 @@ struct ICloudSyncSettingsView: View {
 
     private var footerText: String {
         if iCloudSync.isEnabled {
-            // 參考你第一張截圖下方的文字
-            return "iCloud 網路波動較大，如 iCloud 同步失敗，請耐心等待，或者在 iOS 系統設定頁面的 Apple ID 頁面中，檢查 iCloud 服務狀態，必要時也可重啟應用。"
+            // Footer text when sync is enabled
+            return "iCloud network can be unstable. If iCloud sync fails, please be patient, or check the iCloud service status in your Apple ID settings in iOS System Settings. You may also restart the app if necessary."
         } else {
-            // 參考你第二張截圖下方的文字
-            return "iCloud 同步已停用。您的資料將僅儲存在本機，不會在裝置間同步。協作空間功能也將無法使用。啟用同步並重新啟動應用程式以恢復完整功能。"
+            // Footer text when sync is disabled
+            return "iCloud sync is disabled. Your data will only be stored locally and will not sync between devices. Collaboration space features will also be unavailable. Enable sync and restart the app to restore full functionality."
         }
     }
 
     var body: some View {
         Form {
-            // MARK: - 開關
+            // MARK: - Toggle Switch
             Section {
-                Toggle("啟用 iCloud 同步", isOn: $iCloudSync.isEnabled)
+                Toggle("Enable iCloud Sync", isOn: $iCloudSync.isEnabled)
                     .tint(.green)
             }
 
-            // MARK: - 狀態區
+            // MARK: - Status Section
             if iCloudSync.isEnabled {
                 Section {
-                    // 同步狀態
+                    // Sync Status
                     HStack {
-                        Text("同步狀態")
+                        Text("Sync Status")
                         Spacer()
                         Text(syncStatusText)
                             .foregroundStyle(.secondary)
                     }
 
-                    // 網路（可選）
+                    // Network (optional)
                     if showNetworkRow {
                         HStack {
-                            Text("網路")
+                            Text("Network")
                             Spacer()
-                            Text(networkMonitor.isOnline ? "可用" : "不可用")
+                            Text(networkMonitor.isOnline ? "Available" : "Unavailable")
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    // 上次同步時間
+                    // Last Sync Time
                     HStack {
-                        Text("上次同步時間")
+                        Text("Last Sync Time")
                         Spacer()
                         Text(lastSyncText)
                             .foregroundStyle(.secondary)
@@ -95,18 +95,18 @@ struct ICloudSyncSettingsView: View {
                     }
                 }
             } else {
-                // 關閉同步時只顯示狀態與 iCloud 服務不可用提示（如果需要）
+                // When sync is disabled, only show status
                 Section {
                     HStack {
-                        Text("同步狀態")
+                        Text("Sync Status")
                         Spacer()
-                        Text("同步已停用")
+                        Text("Sync Disabled")
                             .foregroundStyle(.secondary)
                     }
                 }
             }
 
-            // MARK: - 說明
+            // MARK: - Description
             Section {
                 Text(footerText)
                     .font(.footnote)
@@ -127,7 +127,7 @@ struct ICloudSyncSettingsView: View {
                 showingCloudAlert = true
             }
         }
-        .alert("iCloud 同步", isPresented: $showingCloudAlert) {
+        .alert("iCloud Sync", isPresented: $showingCloudAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(cloudAlertMessage)
@@ -137,7 +137,7 @@ struct ICloudSyncSettingsView: View {
     }
 }
 
-// MARK: - 簡易網路監控（可移到別檔）
+// MARK: - Simple Network Monitor (can be moved to separate file)
 final class NetworkMonitor: ObservableObject {
     @Published var isOnline: Bool = true
     private var monitor: NWPathMonitor?

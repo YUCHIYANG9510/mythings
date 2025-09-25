@@ -35,9 +35,9 @@ struct ProStatusView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 56, height: 56)
-            Text(pm.isPro ? "您是專家" : "尚未訂閱")
+            Text(pm.isPro ? "You are Pro" : "Not Subscribed")
                 .font(.title2).bold()
-            Text(pm.isPro ? "感謝您的支持！" : "升級以解鎖所有功能。")
+            Text(pm.isPro ? "Thank you for your support!" : "Upgrade to unlock all features.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -46,14 +46,14 @@ struct ProStatusView: View {
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("訂閱")
+                Text("Subscription")
                 Spacer()
-                Text(pm.isLifetime ? "終身購買" : (pm.isPro ? "年訂閱" : "未訂閱"))
+                Text(pm.isLifetime ? "Lifetime Purchase" : (pm.isPro ? "Annual Subscription" : "Not Subscribed"))
                     .foregroundStyle(.secondary)
             }
             Divider()
             HStack {
-                Text("有效期至")
+                Text("Valid Until")
                 Spacer()
                 Text(expirationText)
                     .foregroundStyle(.secondary)
@@ -70,7 +70,7 @@ struct ProStatusView: View {
             Button {
                 pm.openManageSubscriptions()
             } label: {
-                Text("管理訂閱")
+                Text("Manage Subscription")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -81,10 +81,10 @@ struct ProStatusView: View {
     }
 
     private var expirationText: String {
-        if pm.isLifetime { return "永久" }
+        if pm.isLifetime { return "Forever" }
         guard let date = pm.proExpirationDate else { return "-" }
         let f = DateFormatter()
-        f.locale = Locale(identifier: Locale.preferredLanguages.first ?? "zh-TW")
+        f.locale = Locale(identifier: Locale.preferredLanguages.first ?? "en")
         f.dateStyle = .long
         return f.string(from: date)
     }
@@ -93,5 +93,3 @@ struct ProStatusView: View {
 #Preview {
     ProStatusView().environmentObject(PurchasesManager())
 }
-
-

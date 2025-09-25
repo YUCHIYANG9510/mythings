@@ -136,21 +136,28 @@ struct SettingsView: View {
         .listStyle(.insetGrouped)
     }
 
-    // 刪除所有物件（本地優先，雲端刪除改排程事件）
+    // 刪除所有物件（本地優先，且逐筆排程雲端刪除）
     private func deleteAllItems() {
         guard !items.isEmpty else { return }
         isDeletingAll = true
 
+        // ⭐️ 先把所有要刪除的 IDs 存起來（因為等下就會把 items 清掉）
+        let ids = items.map { $0.id }
+
         Task {
-            // 先刪本地檔與圖
+            // 刪本機圖片與資料
             await deleteAllImageFiles()
             await MainActor.run {
                 items.removeAll()
-                saveItems()              // 這裡會觸發 iCloudSync.manualSync() → schedule(.full)
+                saveItems()              // 落盤，避免殘資料
             }
 
-            // 協調器會統一處理同步，避免併發
-            // 若要逐筆刪 iCloud，請在刪除前先保存 ids，並對每個 id 呼叫 schedule(.deleteItem(id))
+            // ⭐️ 關鍵：逐筆排程雲端刪除，避免 full/pull 時被拉回
+            if iCloudSync.isEnabled {
+                for id in ids {
+                    iCloudSync.schedule(.deleteItem(id))
+                }
+            }
 
             await MainActor.run { isDeletingAll = false }
             ImageCacheManager.shared.invalidateCache()

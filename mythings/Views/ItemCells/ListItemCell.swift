@@ -15,6 +15,9 @@ struct ListItemCell: View {
     @Binding var items: [Item]
     let saveItems: () -> Void
 
+    // ⭐️ 新增：注入 iCloud 同步管理器，刪除時要排程雲端刪除
+    @EnvironmentObject private var iCloudSync: iCloudSyncManager
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             // 縮圖：統一用 Images 資料夾 + 記憶體快取
@@ -48,12 +51,19 @@ struct ListItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                // 移除資料
+                // 先移除本機資料並落盤
                 items.removeAll { $0.id == item.id }
                 saveItems()
-                // 清快取，避免殘影
+
+                // 清縮圖快取，避免殘影
                 if !item.imageName.isEmpty {
                     ImageCacheManager.shared.invalidateCache(for: item.imageName)
+                }
+
+                // ⭐️ 關鍵：排程雲端刪除，避免同步時被拉回
+                if iCloudSync.isEnabled {
+                    iCloudSync.schedule(.deleteItem(item.id))
+                    iCloudSync.kickoffIfNeeded()   // ⭐️ 新增這行
                 }
             }
         }

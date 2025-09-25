@@ -38,16 +38,23 @@ struct ItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                // 先本地刪除 + 落盤（不會直接觸發同步，僅送出 itemsChanged 事件）
+                // 先本機刪除 + 落盤（仍會送出 itemsChanged 事件）
                 items.removeAll { $0.id == item.id }
                 saveItems()
+
+                // ✅ 清縮圖快取，避免殘影
+                if !item.imageName.isEmpty {
+                    ImageCacheManager.shared.invalidateCache(for: item.imageName)
+                }
 
                 // 再交給協調器安排雲端刪除；與 itemsChanged 會被合併處理，避免併發
                 if iCloudSync.isEnabled {
                     iCloudSync.schedule(.deleteItem(item.id))
+                    iCloudSync.kickoffIfNeeded()   // ⭐️ 新增這行
                 }
             }
         }
+
         // ✅ 加上拖曳&放置
         .onDrag {
             ItemDragStore.shared.draggingID = item.id
