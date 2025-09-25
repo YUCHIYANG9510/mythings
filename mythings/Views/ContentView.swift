@@ -498,11 +498,15 @@ struct ListItemImageView: View {
 
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "tray").resizable().frame(width: 40, height: 30).foregroundColor(.gray)
+        VStack {
+            Image("emptyState")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 120, height: 120)
+
             Text("It's empty here...").foregroundColor(.gray).font(.subheadline)
         }
-        .padding(.top, 250)
+        .padding(.top, 180)
     }
 }
 
@@ -549,29 +553,34 @@ struct CanvasTabToggle: View {
 
     private func circle(isOn: Bool) -> some View {
         Circle()
-            .fill(isOn ? Color.black : Color.clear)
+            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)         // Color only
             .frame(width: 56, height: 56)
             .overlay(
                 Image(systemName: isOn ? "cube.fill" : "cube")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(isOn ? .white : .black)
+                    .foregroundStyle(isOn ? .white : .primary)
             )
+     
+            .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
     }
 
     private func eyes(isOn: Bool) -> some View {
         Circle()
-            .fill(isOn ? Color.black : Color.clear)
+            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)         // Color only
             .frame(width: 56, height: 56)
             .overlay(
                 Image(systemName: "eyes")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(isOn ? .white : .black)
+                    .foregroundStyle(isOn ? .white : .primary)
             )
+            .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
     }
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 6) {
             Button {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                 generator.impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .default
                 }
@@ -581,6 +590,8 @@ struct CanvasTabToggle: View {
             .accessibilityLabel("Default View")
 
             Button {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                 generator.impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .canvas
                 }
@@ -589,13 +600,22 @@ struct CanvasTabToggle: View {
             }
             .accessibilityLabel("Canvas View")
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
-        .background(
+        .padding(6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
             Capsule()
-                .fill(.white)
-                .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 6)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.6), Color.white.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+                .blendMode(.overlay)
         )
+        .shadow(color: .black.opacity(0.15), radius: 16, x: 0, y: 8)
+        .shadow(color: .white.opacity(0.06), radius: 1, x: 0, y: 1)
     }
 }
 

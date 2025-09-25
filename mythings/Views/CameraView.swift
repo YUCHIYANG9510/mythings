@@ -130,7 +130,11 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
     @MainActor
     func configure() async -> Bool {
         return await withCheckedContinuation { cont in
-            sessionQueue.async {
+            sessionQueue.async { [weak self] in
+                guard let self else {
+                    DispatchQueue.main.async { cont.resume(returning: false) }
+                    return
+                }
                 self.session.beginConfiguration()
                 self.session.sessionPreset = .photo
                 
@@ -170,13 +174,15 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
     
     @MainActor
     func start() async {
-        sessionQueue.async {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
             if !self.session.isRunning { self.session.startRunning() }
         }
     }
     
     func stop() {
-        sessionQueue.async {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
             if self.session.isRunning { self.session.stopRunning() }
         }
     }
@@ -206,12 +212,25 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
-        defer { onFinish?() }
-        guard error == nil, let data = photo.fileDataRepresentation(), let img = UIImage(data: data) else { return }
-        // 盡量維持原始方向
-        onPhoto?(img)
+        defer {
+            // 確保回到主執行緒更新 UI 狀態
+            DispatchQueue.main.async { [onFinish = self.onFinish] in
+                onFinish?()
+            }
+        }
+        guard error == nil,
+              let data = photo.fileDataRepresentation(),
+              let img = UIImage(data: data) else { return }
+        // 回到主執行緒傳遞圖片，避免背景執行緒觸發 UI 更新
+        DispatchQueue.main.async { [onPhoto = self.onPhoto] in
+            onPhoto?(img)
+        }
     }
 }
+
+// 避免 Swift 6 中在 @Sendable 閉包內捕獲非 Sendable 類型的錯誤。
+// CameraService 的可變狀態已由私有序列佇列（sessionQueue）保護。
+extension CameraService: @unchecked Sendable {}
 
 // MARK: - Preview Layer in SwiftUI
 struct CameraPreviewView: UIViewRepresentable {
