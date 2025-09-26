@@ -247,6 +247,10 @@ final class iCloudSyncManager: ObservableObject {
         name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    // ⭐ 時鐘/網路誤差的保險重疊
+    private let clockSkewLeeway: TimeInterval = 5 * 60  // 5 分鐘
+
+    
     // Lifecycle
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "icloud.sync.enabled")
@@ -450,10 +454,9 @@ final class iCloudSyncManager: ObservableObject {
         let items = loadLocalItems()
         let categories = loadLocalCategories()
 
-        let recentThreshold = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        let recentItems = items.filter { item in
-            (item.date ?? .distantPast) > max(recentThreshold, lastItemSyncDate)
-        }
+        // ⭐ 用 updatedAt 判斷本機最近有變更的項目（含重疊）
+        let watermark = lastItemSyncDate.addingTimeInterval(-clockSkewLeeway)
+        let recentItems = items.filter { $0.updatedAt > watermark }
 
         if !recentItems.isEmpty {
             try await pushItemsWithRetry(recentItems)
@@ -464,16 +467,15 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
+
     private func pullRemoteChanges() async throws {
         try await pullItemsSince(lastItemSyncDate)
         try await pullCategoriesSince(lastCategorySyncDate)
-
-        let now = Date()
-        lastItemSyncDate = now
-        lastCategorySyncDate = now
+       
     }
-
     private func pullItemsSince(_ since: Date) async throws {
+        // ⭐ 將 since 往回推一段重疊，避免漏抓
+        let sinceWithLeeway = since.addingTimeInterval(-clockSkewLeeway)
         let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
         let query = CKQuery(recordType: "Item", predicate: predicate)
 
@@ -500,7 +502,8 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func pullCategoriesSince(_ since: Date) async throws {
-        let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
+        let sinceWithLeeway = since.addingTimeInterval(-clockSkewLeeway)          // ⭐ 重疊
+        let predicate = NSPredicate(format: "updatedAt > %@", sinceWithLeeway as CVarArg)
         let query = CKQuery(recordType: "Category", predicate: predicate)
 
         if supportsOrderIndex {
@@ -522,11 +525,12 @@ final class iCloudSyncManager: ObservableObject {
         } while cursor != nil
 
         guard !allChanges.isEmpty else { return }
-        try await mergeCategoryChanges(allChanges)
+        try await mergeCategoryChanges(allChanges)   // ⭐ 水位在 merge 裡更新
     }
 
     private func mergeItemChanges(_ changes: [CKRecord]) async throws {
         var local = loadLocalItems()
+        var maxCloudUpdatedAt: Date = lastItemSyncDate   // ⭐ 追蹤雲端最大時間
 
         for record in changes {
             guard
@@ -539,12 +543,13 @@ final class iCloudSyncManager: ObservableObject {
             else { continue }
 
             let date = record["date"] as? Date
-            var finalImageName = ""
+            let cloudUpdatedAt = record["updatedAt"] as? Date ?? .distantPast
+            if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }   // ⭐
 
+            var finalImageName = ""
             if let asset = record["image"] as? CKAsset, let cloudURL = asset.fileURL {
                 finalImageName = "\(uuid.uuidString).png"
                 let target = imageStore.fileURL(for: finalImageName)
-
                 do {
                     try imageStore.ensureDirs()
                     if fm.fileExists(atPath: target.path) { try? fm.removeItem(at: target) }
@@ -556,28 +561,46 @@ final class iCloudSyncManager: ObservableObject {
                 }
             }
 
-            let updatedItem = Item(
-                id: uuid,
-                imageName: finalImageName,
-                brand: brand,
-                category: category,
-                name: name,
-                price: price,
-                date: date
-            )
-
             if let index = local.firstIndex(where: { $0.id == uuid }) {
-                local[index] = updatedItem
+                let chosenImageName = finalImageName.isEmpty ? local[index].imageName : finalImageName
+                let merged = Item(
+                    id: uuid,
+                    imageName: chosenImageName,
+                    brand: brand,
+                    category: category,
+                    name: name,
+                    price: price,
+                    date: date,
+                    updatedAt: cloudUpdatedAt
+                )
+                local[index] = merged
             } else {
-                local.append(updatedItem)
+                let newItem = Item(
+                    id: uuid,
+                    imageName: finalImageName,
+                    brand: brand,
+                    category: category,
+                    name: name,
+                    price: price,
+                    date: date,
+                    updatedAt: cloudUpdatedAt
+                )
+                local.append(newItem)
             }
         }
 
         saveLocalItems(local)
+
+        // ⭐ 將水位設為「目前水位」與「雲端最大 updatedAt」的較大者
+        //    （不要直接用 Date()，避免把水位設得過新而漏抓）
+        if maxCloudUpdatedAt > lastItemSyncDate {
+            lastItemSyncDate = maxCloudUpdatedAt
+        }
     }
 
     private func mergeCategoryChanges(_ changes: [CKRecord]) async throws {
         var local = loadLocalCategories()
+        var maxCloudUpdatedAt: Date = lastCategorySyncDate                         // ⭐ 追蹤最大時間
 
         for record in changes {
             guard
@@ -586,7 +609,10 @@ final class iCloudSyncManager: ObservableObject {
                 let name = record["name"] as? String
             else { continue }
 
-        let emoji = (record["emoji"] as? String) ?? ""
+            let emoji = (record["emoji"] as? String) ?? ""
+            let cloudUpdatedAt = record["updatedAt"] as? Date ?? .distantPast
+            if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }   // ⭐
+
             let updatedCategory = Category(id: uuid, name: name, emoji: emoji)
 
             if let index = local.firstIndex(where: { $0.id == uuid }) {
@@ -597,6 +623,11 @@ final class iCloudSyncManager: ObservableObject {
         }
 
         saveLocalCategories(local)
+
+        // ⭐ 用雲端最大 updatedAt 更新水位（不要用 Date()）
+        if maxCloudUpdatedAt > lastCategorySyncDate {
+            lastCategorySyncDate = maxCloudUpdatedAt
+        }
     }
 
     // MARK: - 完整同步（已加入墓碑處理）
@@ -679,7 +710,7 @@ final class iCloudSyncManager: ObservableObject {
         rec["name"] = item.name as CKRecordValue
         rec["price"] = item.price as CKRecordValue
         if let d = item.date { rec["date"] = d as CKRecordValue }
-        rec["updatedAt"] = Date() as CKRecordValue
+        rec["updatedAt"] = item.updatedAt as CKRecordValue   // ⭐ 用本機記錄的 updatedAt
         rec["orderIndex"] = NSNumber(value: orderIndex)
 
         if !item.imageName.isEmpty {
@@ -715,6 +746,7 @@ final class iCloudSyncManager: ObservableObject {
 
     private func pullItems() async throws {
         let query = CKQuery(recordType: "Item", predicate: NSPredicate(value: true))
+
         if supportsOrderIndex {
             query.sortDescriptors = [
                 NSSortDescriptor(key: "orderIndex", ascending: true),
@@ -736,6 +768,7 @@ final class iCloudSyncManager: ObservableObject {
         var local = loadLocalItems()
         var cloudOrder: [(UUID, Int)] = []
         var fallbackOrderIndexByUUID: [UUID: Int] = [:]
+        var maxCloudUpdatedAt: Date = lastItemSyncDate   // ⭐ 追蹤雲端最大 updatedAt
 
         for (idx, r) in all.enumerated() {
             guard
@@ -747,14 +780,16 @@ final class iCloudSyncManager: ObservableObject {
                 let price = r["price"] as? String
             else { continue }
 
-            let date = r["date"] as? Date
-            let orderIdx = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
-            var finalImageName = ""
+            let date           = r["date"] as? Date
+            let cloudUpdatedAt = r["updatedAt"] as? Date ?? .distantPast   // ⭐ 雲端時間
+            if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt } // ⭐ 累計最大值
 
+            let orderIdx = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
+
+            var finalImageName = ""
             if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
                 finalImageName = "\(uuid.uuidString).png"
                 let target = imageStore.fileURL(for: finalImageName)
-
                 do {
                     try imageStore.ensureDirs()
                     if fm.fileExists(atPath: target.path) { try? fm.removeItem(at: target) }
@@ -767,25 +802,29 @@ final class iCloudSyncManager: ObservableObject {
             }
 
             if let idxLocal = local.firstIndex(where: { $0.id == uuid }) {
-                local[idxLocal] = Item(
+                let merged = Item(
                     id: uuid,
-                    imageName: finalImageName.isEmpty ? local[idxLocal].imageName : finalImageName,
+                    imageName: finalImageName.isEmpty ? local[idxLocal].imageName : finalImageName, // ⭐ 雲端沒圖→保留本機圖
                     brand: brand,
                     category: category,
                     name: name,
                     price: price,
-                    date: date
+                    date: date,
+                    updatedAt: cloudUpdatedAt                                                     // ⭐ 寫回雲端時間
                 )
+                local[idxLocal] = merged
             } else {
-                local.append(Item(
+                let newItem = Item(
                     id: uuid,
                     imageName: finalImageName,
                     brand: brand,
                     category: category,
                     name: name,
                     price: price,
-                    date: date
-                ))
+                    date: date,
+                    updatedAt: cloudUpdatedAt                                                     // ⭐
+                )
+                local.append(newItem)
             }
 
             if let orderIdx { cloudOrder.append((uuid, orderIdx)) }
@@ -795,6 +834,7 @@ final class iCloudSyncManager: ObservableObject {
         let orderMap: [UUID: Int] = (supportsOrderIndex && !cloudOrder.isEmpty)
             ? Dictionary(uniqueKeysWithValues: cloudOrder)
             : fallbackOrderIndexByUUID
+
         local.sort { (a, b) -> Bool in
             let ia = orderMap[a.id] ?? Int.max
             let ib = orderMap[b.id] ?? Int.max
@@ -803,6 +843,11 @@ final class iCloudSyncManager: ObservableObject {
         }
 
         saveLocalItems(local)
+
+        // ⭐ 用雲端最大 updatedAt 更新本機水位（避免設成現在時間造成之後漏抓）
+        if maxCloudUpdatedAt > lastItemSyncDate {
+            lastItemSyncDate = maxCloudUpdatedAt
+        }
     }
 
     private func pullCategories() async throws {
@@ -818,7 +863,6 @@ final class iCloudSyncManager: ObservableObject {
 
         var all: [CKRecord] = []
         var cursor: CKQueryOperation.Cursor?
-
         repeat {
             let page = try await performQuery(query: query, cursor: cursor)
             all.append(contentsOf: page.records)
@@ -826,21 +870,25 @@ final class iCloudSyncManager: ObservableObject {
         } while cursor != nil
 
         let local = loadLocalCategories()
+        var maxCloudUpdatedAt: Date = lastCategorySyncDate   // ⭐ 追蹤雲端最大時間
 
+        // 依「規一化名稱」挑最新一筆，並保留排序資訊
         var nameToBest: [String: (Category, Date?, CKRecord.ID, Int?)] = [:]
         for r in all {
             guard
                 let idStr = r["id"] as? String,
-                let uuid = UUID(uuidString: idStr),
-                let name = r["name"] as? String
+                let uuid  = UUID(uuidString: idStr),
+                let name  = r["name"] as? String
             else { continue }
 
             let emoji = (r["emoji"] as? String) ?? ""
             let updatedAt = r["updatedAt"] as? Date
+            if let upd = updatedAt, upd > maxCloudUpdatedAt { maxCloudUpdatedAt = upd }   // ⭐ 累計最大值
             let ord = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
-            let key = normalizeCategoryKey(name)
 
+            let key = normalizeCategoryKey(name)
             let candidate = Category(id: uuid, name: name, emoji: emoji)
+
             if let exist = nameToBest[key] {
                 let existingDate = exist.1 ?? .distantPast
                 let newDate = updatedAt ?? .distantPast
@@ -852,34 +900,45 @@ final class iCloudSyncManager: ObservableObject {
             }
         }
 
-        try await cleanupDuplicateCategoryRecords(allRecords: all, keepKeys: Set(nameToBest.values.map { $0.2 }))
+        // 清除重複舊鍵（僅保留我們挑的那幾筆）
+        try await cleanupDuplicateCategoryRecords(
+            allRecords: all,
+            keepKeys: Set(nameToBest.values.map { $0.2 })
+        )
 
+        // 產出排序後的最終清單
         var merged: [Category] = []
         var usedIds = Set<UUID>()
 
         let ordered = nameToBest.values.sorted { a, b in
             let ia = a.3 ?? Int.max
             let ib = b.3 ?? Int.max
-            if ia != ib { return ia < ib }
+            if ia != ib { return ia < ib }                      // 先看 orderIndex（小在前）
             let da = a.1 ?? .distantPast
             let db = b.1 ?? .distantPast
-            if da != db { return da > db }
-            return a.0.name.lowercased() < b.0.name.lowercased()
+            if da != db { return da > db }                      // 再看 updatedAt（新在前）
+            return a.0.name.lowercased() < b.0.name.lowercased()// 最後按名稱
         }
         for value in ordered {
             merged.append(value.0)
             usedIds.insert(value.0.id)
         }
 
+        // 雲端沒有但本機有的，保留在尾端（避免資料突然消失）
         let cloudNameSet = Set(nameToBest.keys)
         for lc in local {
-            let key = lc.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let key = normalizeCategoryKey(lc.name)
             if !cloudNameSet.contains(key) && !usedIds.contains(lc.id) {
                 merged.append(lc)
             }
         }
 
         saveLocalCategories(merged)
+
+        // ⭐ 用雲端最大 updatedAt 回寫水位（不要用 Date()）
+        if maxCloudUpdatedAt > lastCategorySyncDate {
+            lastCategorySyncDate = maxCloudUpdatedAt
+        }
     }
 
     // 刪除同名重複與舊格式鍵的分類紀錄，只保留一筆最新的（傳入要保留的 RecordID 集合）

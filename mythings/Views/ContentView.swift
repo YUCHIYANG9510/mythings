@@ -245,7 +245,9 @@ struct ContentView: View {
                 brandStore: brandStore
             ) { updated in
                 if let idx = items.firstIndex(where: { $0.id == updated.id }) {
-                    items[idx] = updated
+                    var new = updated
+                    new.updatedAt = Date()   // ⭐ 新增：只要有改就刷新時間
+                    items[idx] = new
                     saveItems()
                 }
             }
@@ -256,6 +258,7 @@ struct ContentView: View {
             }
         }
 
+
         .sheet(item: $editingItem, onDismiss: { editingImageForSheet = nil }) { editing in
             AddItemView(
                 selectedImage: $editingImageForSheet,
@@ -265,7 +268,9 @@ struct ContentView: View {
                 showManageCategories: $showManageCategories
             ) { newItem in
                 if let idx = items.firstIndex(where: { $0.id == editing.id }) {
-                    items[idx] = newItem
+                    var new = newItem
+                    new.updatedAt = Date()     // ⭐ 新增：編輯完成刷新時間
+                    items[idx] = new
                 }
                 ImageCacheManager.shared.invalidateCache(for: editing.imageName)
                 if editing.imageName != newItem.imageName {
@@ -275,6 +280,7 @@ struct ContentView: View {
                 saveItems()
             }
         }
+
 
 
 
