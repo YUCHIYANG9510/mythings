@@ -82,6 +82,7 @@ struct ContentView: View {
 
     @State private var selectedPage: Int = 0
     @State private var pageMode: PageMode = .default
+    @State private var editingImageForSheet: UIImage? = nil
 
     // MARK: - 新增：排序狀態
     @State private var sortKey: SortKey = .none
@@ -255,15 +256,14 @@ struct ContentView: View {
             }
         }
 
-        .sheet(item: $editingItem) { editing in
+        .sheet(item: $editingItem, onDismiss: { editingImageForSheet = nil }) { editing in
             AddItemView(
-                selectedImage: .constant(nil),
+                selectedImage: $editingImageForSheet,
                 existingItem: editing,
                 categoryStore: categoryStore,
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                // 編輯不受數量上限限制（只是更新）
                 if let idx = items.firstIndex(where: { $0.id == editing.id }) {
                     items[idx] = newItem
                 }
@@ -275,6 +275,8 @@ struct ContentView: View {
                 saveItems()
             }
         }
+
+
 
         .sheet(isPresented: $isAddingNewItem) {
             AddItemView(

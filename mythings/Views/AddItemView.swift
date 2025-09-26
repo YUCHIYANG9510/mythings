@@ -314,7 +314,7 @@ private extension AddItemView {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
-                .background(Color.primary)
+                .background(Color(UIColor.label)) // 固定主色（淺色=黑，深色=白）
                 .foregroundColor(Color(UIColor.systemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 28))
         }
@@ -524,7 +524,7 @@ private struct BrandChipsView: View {
     @Binding var selectedBrand: String
     @Environment(\.colorScheme) var colorScheme
 
-    private let addColor: Color = .primary
+    private let addColor: Color = Color(UIColor.label)
 
     var body: some View {
         FlowLayout(spacing: 8, runSpacing: 8) {
