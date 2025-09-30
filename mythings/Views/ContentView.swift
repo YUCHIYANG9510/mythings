@@ -558,23 +558,32 @@ struct ItemImageView: View {
 
 struct CanvasTabToggle: View {
     @Binding var selected: PageMode
+    
+    // 預先初始化 feedback generator，避免每次點擊時重新創建
+    private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
+    
+    init(selected: Binding<PageMode>) {
+        self._selected = selected
+        // 預先準備 feedback generator
+        feedbackGenerator.prepare()
+    }
 
     private func circle(isOn: Bool) -> some View {
         Circle()
-            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)         // Color only
+            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)
             .frame(width: 56, height: 56)
             .overlay(
                 Image(systemName: isOn ? "cube.fill" : "cube")
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(isOn ? .white : .primary)
             )
-     
+            // 簡化陰影效果
             .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
     }
 
     private func eyes(isOn: Bool) -> some View {
         Circle()
-            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)         // Color only
+            .fill(isOn ? Color.black.opacity(0.7) : Color.clear)
             .frame(width: 56, height: 56)
             .overlay(
                 Image(systemName: "eyes")
@@ -587,8 +596,8 @@ struct CanvasTabToggle: View {
     var body: some View {
         HStack(spacing: 6) {
             Button {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                 generator.impactOccurred()
+                // 使用預先初始化的 generator
+                feedbackGenerator.impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .default
                 }
@@ -598,8 +607,7 @@ struct CanvasTabToggle: View {
             .accessibilityLabel("Default View")
 
             Button {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                 generator.impactOccurred()
+                feedbackGenerator.impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
                     selected = .canvas
                 }
@@ -613,17 +621,13 @@ struct CanvasTabToggle: View {
         .overlay(
             Capsule()
                 .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.6), Color.white.opacity(0.15)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
+                    // 簡化 gradient，減少計算複雜度
+                    .white.opacity(0.3),
                     lineWidth: 1
                 )
-                .blendMode(.overlay)
         )
+        // 減少陰影層數
         .shadow(color: .black.opacity(0.15), radius: 16, x: 0, y: 8)
-        .shadow(color: .white.opacity(0.06), radius: 1, x: 0, y: 1)
     }
 }
 
