@@ -53,7 +53,18 @@ class CategoryStore: ObservableObject {
     }
 
     func deleteCategory(at indexSet: IndexSet) {
+        // ⭐️ 先記錄要刪除的 ID
+        let idsToDelete = indexSet.map { categories[$0].id }
+        
         categories.remove(atOffsets: indexSet)
+        // saveCategories() 已在 didSet 中自動呼叫，會觸發 categoriesChanged
+        
+        // ⭐️ 額外排程刪除事件（寫墓碑）
+        if iCloudSync.isEnabled {
+            for id in idsToDelete {
+                iCloudSync.schedule(.deleteCategory(id))
+            }
+        }
     }
 
     func moveCategory(from source: IndexSet, to destination: Int) {
