@@ -14,8 +14,10 @@ struct Item: Identifiable, Codable {
     let category: String
     let name: String
     let price: String
-    let date: Date?          // 可選日期（相容舊資料）
-    var updatedAt: Date      // ⭐ 新增：本機最後編輯時間（用於增量同步判斷）
+    let date: Date?
+    
+    var createdAt: Date      // ✅ 新增：建立時間（排序依據）
+    var updatedAt: Date      // 已有：最後編輯時間（增量同步依據）
 
     init(
         id: UUID = UUID(),
@@ -25,7 +27,8 @@ struct Item: Identifiable, Codable {
         name: String,
         price: String,
         date: Date? = nil,
-        updatedAt: Date = Date()   // ⭐ 預設為現在，新增或編輯時會刷新
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
     ) {
         self.id = id
         self.imageName = imageName
@@ -34,12 +37,12 @@ struct Item: Identifiable, Codable {
         self.name = name
         self.price = price
         self.date = date
+        self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
-    // 舊檔相容：舊 JSON 沒有 updatedAt 時給 .distantPast
     enum CodingKeys: String, CodingKey {
-        case id, imageName, brand, category, name, price, date, updatedAt
+        case id, imageName, brand, category, name, price, date, createdAt, updatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -51,6 +54,12 @@ struct Item: Identifiable, Codable {
         name      = try c.decode(String.self, forKey: .name)
         price     = try c.decode(String.self, forKey: .price)
         date      = try c.decodeIfPresent(Date.self, forKey: .date)
-        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+
+        let decodedUpdated = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+        updatedAt = decodedUpdated
+
+        // ✅ 舊檔相容：沒 createdAt 時，用 updatedAt（若也沒有就用 date / distantPast）
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+            ?? (decodedUpdated != .distantPast ? decodedUpdated : (date ?? .distantPast))
     }
 }

@@ -115,7 +115,7 @@ actor SyncCoordinator {
         for id in deleteItemIDs {
             try await runners.deleteItem(id)
         }
-        
+
         // ⭐️ 處理分類刪除
         let deleteCategoryIDs = batch.compactMap { if case let .deleteCategory(id) = $0 { return id } else { return nil } }
         for id in deleteCategoryIDs {
@@ -243,7 +243,7 @@ final class iCloudSyncManager: ObservableObject {
         get { UserDefaults.standard.object(forKey: "icloud.sync.deleted.lastDate") as? Date ?? .distantPast }
         set { UserDefaults.standard.set(newValue, forKey: "icloud.sync.deleted.lastDate") }
     }
-    
+
     // ⭐️ 新增：分類墓碑水位
     private var lastDeletedCategorySyncDate: Date {
         get { UserDefaults.standard.object(forKey: "icloud.sync.deletedCategory.lastDate") as? Date ?? .distantPast }
@@ -312,7 +312,7 @@ final class iCloudSyncManager: ObservableObject {
                 guard let self else { return }
                 try await self.deleteItemOnCloud(id)
             },
-            deleteCategory: { [weak self] id in  // ⭐️ 新增
+            deleteCategory: { [weak self] id in
                 guard let self else { return }
                 try await self.deleteCategoryOnCloud(id)
             },
@@ -345,7 +345,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Enable / Disable
-
     private func enableCloudSync() {
         print("=== CloudKit Debug Info ===")
         print("Container ID: \(container.containerIdentifier ?? "nil")")
@@ -396,7 +395,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Local IO
-
     private func loadLocalItems() -> [Item] {
         guard fm.fileExists(atPath: localItemsURL.path),
               let data = try? Data(contentsOf: localItemsURL),
@@ -456,7 +454,7 @@ final class iCloudSyncManager: ObservableObject {
         try ensureLocalFolders()
 
         try await pullDeletedItemsSince(lastDeletedSyncDate)
-        try await pullDeletedCategoriesSince(lastDeletedCategorySyncDate)  // ⭐️ 新增
+        try await pullDeletedCategoriesSince(lastDeletedCategorySyncDate)
 
         try await pushLocalChanges()
         try await pullRemoteChanges()
@@ -482,7 +480,7 @@ final class iCloudSyncManager: ObservableObject {
         try await pullItemsSince(lastItemSyncDate)
         try await pullCategoriesSince(lastCategorySyncDate)
     }
-    
+
     private func pullItemsSince(_ since: Date) async throws {
         let sinceWithLeeway = since.addingTimeInterval(-clockSkewLeeway)
         let predicate = NSPredicate(format: "updatedAt > %@", sinceWithLeeway as CVarArg)
@@ -537,6 +535,7 @@ final class iCloudSyncManager: ObservableObject {
         try await mergeCategoryChanges(allChanges)
     }
 
+    // ✅ Updated: merge 時帶入 createdAt，落盤用 createdAt 排序（新到舊）
     private func mergeItemChanges(_ changes: [CKRecord]) async throws {
         var local = loadLocalItems()
         var maxCloudUpdatedAt: Date = lastItemSyncDate
@@ -553,6 +552,8 @@ final class iCloudSyncManager: ObservableObject {
 
             let date = record["date"] as? Date
             let cloudUpdatedAt = record["updatedAt"] as? Date ?? .distantPast
+            let cloudCreatedAt = record["createdAt"] as? Date
+
             if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }
 
             var finalImageName = ""
@@ -572,6 +573,11 @@ final class iCloudSyncManager: ObservableObject {
 
             if let index = local.firstIndex(where: { $0.id == uuid }) {
                 let chosenImageName = finalImageName.isEmpty ? local[index].imageName : finalImageName
+
+                // ✅ createdAt：既有資料以本機為主；雲端有就補齊（但不要覆蓋掉本機更早的 createdAt）
+                let localCreated = local[index].createdAt
+                let finalCreated = cloudCreatedAt ?? localCreated
+
                 let merged = Item(
                     id: uuid,
                     imageName: chosenImageName,
@@ -580,10 +586,18 @@ final class iCloudSyncManager: ObservableObject {
                     name: name,
                     price: price,
                     date: date,
+                    createdAt: finalCreated,
                     updatedAt: cloudUpdatedAt
                 )
                 local[index] = merged
             } else {
+                // ✅ 新增：若雲端沒有 createdAt，退回用 updatedAt / date 當作建立時間
+                let fallbackCreated: Date = {
+                    if let c = cloudCreatedAt { return c }
+                    if cloudUpdatedAt != .distantPast { return cloudUpdatedAt }
+                    return date ?? .distantPast
+                }()
+
                 let newItem = Item(
                     id: uuid,
                     imageName: finalImageName,
@@ -592,12 +606,15 @@ final class iCloudSyncManager: ObservableObject {
                     name: name,
                     price: price,
                     date: date,
+                    createdAt: fallbackCreated,
                     updatedAt: cloudUpdatedAt
                 )
                 local.append(newItem)
             }
         }
 
+        // ✅ 落盤排序固定用 createdAt（新到舊），避免跨裝置陣列順序飄移
+        local.sort { $0.createdAt > $1.createdAt }
         saveLocalItems(local)
 
         if maxCloudUpdatedAt > lastItemSyncDate {
@@ -642,7 +659,7 @@ final class iCloudSyncManager: ObservableObject {
         try ensureLocalFolders()
 
         try await pullAllDeletedItems()
-        try await pullAllDeletedCategories()  // ⭐️ 新增
+        try await pullAllDeletedCategories()
 
         let items = loadLocalItems()
         let cats = loadLocalCategories()
@@ -663,7 +680,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Push with retry
-
     private func pushItemsWithRetry(_ items: [Item]) async throws {
         for (index, item) in items.enumerated() {
             try Task.checkCancellation()
@@ -705,7 +721,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Push one item
-
     private func pushSingleItem(_ item: Item, orderIndex: Int) async throws {
         let rid = CKRecord.ID(recordName: "item-\(item.id.uuidString)")
         let rec = try await fetchOrCreate(recordType: "Item", id: rid)
@@ -716,7 +731,17 @@ final class iCloudSyncManager: ObservableObject {
         rec["name"] = item.name as CKRecordValue
         rec["price"] = item.price as CKRecordValue
         if let d = item.date { rec["date"] = d as CKRecordValue }
-        rec["updatedAt"] = item.updatedAt as CKRecordValue
+
+        // ✅ updatedAt：仍用 stamped（避免過去時間）
+        let now = Date()
+        let stamped = max(item.updatedAt, now)
+        rec["updatedAt"] = stamped as CKRecordValue
+
+        // ✅ createdAt：只在雲端沒有時才補上（避免被後續 sync 覆蓋）
+        if rec["createdAt"] == nil {
+            rec["createdAt"] = item.createdAt as CKRecordValue
+        }
+
         rec["orderIndex"] = NSNumber(value: orderIndex)
 
         if !item.imageName.isEmpty {
@@ -749,7 +774,7 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Pull 全量（作為 Full 的一環）
-
+    // ✅ Updated: 讀取 createdAt，merge 保留 createdAt，落盤排序固定用 createdAt（新到舊）
     private func pullItems() async throws {
         let query = CKQuery(recordType: "Item", predicate: NSPredicate(value: true))
 
@@ -772,11 +797,9 @@ final class iCloudSyncManager: ObservableObject {
         } while cursor != nil
 
         var local = loadLocalItems()
-        var cloudOrder: [(UUID, Int)] = []
-        var fallbackOrderIndexByUUID: [UUID: Int] = [:]
         var maxCloudUpdatedAt: Date = lastItemSyncDate
 
-        for (idx, r) in all.enumerated() {
+        for r in all {
             guard
                 let idStr = r["id"] as? String,
                 let uuid = UUID(uuidString: idStr),
@@ -788,9 +811,8 @@ final class iCloudSyncManager: ObservableObject {
 
             let date = r["date"] as? Date
             let cloudUpdatedAt = r["updatedAt"] as? Date ?? .distantPast
+            let cloudCreatedAt = r["createdAt"] as? Date
             if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }
-
-            let orderIdx = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
 
             var finalImageName = ""
             if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -808,18 +830,30 @@ final class iCloudSyncManager: ObservableObject {
             }
 
             if let idxLocal = local.firstIndex(where: { $0.id == uuid }) {
+                let chosenImageName = finalImageName.isEmpty ? local[idxLocal].imageName : finalImageName
+
+                let localCreated = local[idxLocal].createdAt
+                let finalCreated = cloudCreatedAt ?? localCreated
+
                 let merged = Item(
                     id: uuid,
-                    imageName: finalImageName.isEmpty ? local[idxLocal].imageName : finalImageName,
+                    imageName: chosenImageName,
                     brand: brand,
                     category: category,
                     name: name,
                     price: price,
                     date: date,
+                    createdAt: finalCreated,
                     updatedAt: cloudUpdatedAt
                 )
                 local[idxLocal] = merged
             } else {
+                let fallbackCreated: Date = {
+                    if let c = cloudCreatedAt { return c }
+                    if cloudUpdatedAt != .distantPast { return cloudUpdatedAt }
+                    return date ?? .distantPast
+                }()
+
                 let newItem = Item(
                     id: uuid,
                     imageName: finalImageName,
@@ -828,26 +862,15 @@ final class iCloudSyncManager: ObservableObject {
                     name: name,
                     price: price,
                     date: date,
+                    createdAt: fallbackCreated,
                     updatedAt: cloudUpdatedAt
                 )
                 local.append(newItem)
             }
-
-            if let orderIdx { cloudOrder.append((uuid, orderIdx)) }
-            fallbackOrderIndexByUUID[uuid] = idx
         }
 
-        let orderMap: [UUID: Int] = (supportsOrderIndex && !cloudOrder.isEmpty)
-            ? Dictionary(uniqueKeysWithValues: cloudOrder)
-            : fallbackOrderIndexByUUID
-
-        local.sort { (a, b) -> Bool in
-            let ia = orderMap[a.id] ?? Int.max
-            let ib = orderMap[b.id] ?? Int.max
-            if ia != ib { return ia < ib }
-            return (a.date ?? .distantPast) > (b.date ?? .distantPast)
-        }
-
+        // ✅ 「預設順序」一律以 createdAt 決定（跨裝置穩定）
+        local.sort { $0.createdAt > $1.createdAt }
         saveLocalItems(local)
 
         if maxCloudUpdatedAt > lastItemSyncDate {
@@ -1003,7 +1026,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Public maintenance / inspection
-
     func countAllRecords() async -> (items: Int, categories: Int) {
         let items = await countItemRecords()
         let categories = await countCategoryRecords()
@@ -1045,13 +1067,12 @@ final class iCloudSyncManager: ObservableObject {
         lastItemSyncDate = .distantPast
         lastCategorySyncDate = .distantPast
         lastDeletedSyncDate = .distantPast
-        lastDeletedCategorySyncDate = .distantPast  // ⭐️ 新增
+        lastDeletedCategorySyncDate = .distantPast
 
         print("🧹 Wiped local store (items.json, categories.json, images/*) and reset sync timestamps.")
     }
 
     // MARK: - Private helpers for counts
-
     private func countRecords(of recordType: String) async -> Int {
         do {
             var total = 0
@@ -1101,7 +1122,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Delete（協調器呼叫）
-
     private func deleteItemOnCloud(_ itemId: UUID) async throws {
         do {
             let did = CKRecord.ID(recordName: "deleted-\(itemId.uuidString)")
@@ -1161,16 +1181,16 @@ final class iCloudSyncManager: ObservableObject {
         // 1) 查詢並刪除所有匹配的 Category records
         let predicate = NSPredicate(format: "id == %@", categoryId.uuidString)
         let query = CKQuery(recordType: "Category", predicate: predicate)
-        
+
         var idsToDelete: [CKRecord.ID] = []
         var cursor: CKQueryOperation.Cursor?
-        
+
         repeat {
             let page = try await performQuery(query: query, cursor: cursor)
             idsToDelete.append(contentsOf: page.records.map { $0.recordID })
             cursor = page.cursor
         } while cursor != nil
-        
+
         if !idsToDelete.isEmpty {
             try await deleteRecordsInBatches(ids: Array(Set(idsToDelete)))
             print("✅ Deleted \(idsToDelete.count) Category record(s) for id=\(categoryId)")
@@ -1180,7 +1200,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - DeletedItem（墓碑）支援
-
     private func pullDeletedItemsSince(_ since: Date) async throws {
         let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
         let query = CKQuery(recordType: "DeletedItem", predicate: predicate)
@@ -1235,7 +1254,7 @@ final class iCloudSyncManager: ObservableObject {
         let predicate = NSPredicate(format: "updatedAt > %@", since as CVarArg)
         let query = CKQuery(recordType: "DeletedCategory", predicate: predicate)
         var deletedIDs: [UUID] = []
-        
+
         var cursor: CKQueryOperation.Cursor?
         repeat {
             let page = try await performQuery(query: query, cursor: cursor)
@@ -1246,7 +1265,7 @@ final class iCloudSyncManager: ObservableObject {
             }
             cursor = page.cursor
         } while cursor != nil
-        
+
         guard !deletedIDs.isEmpty else { return }
         try await removeLocalCategories(withIDs: Set(deletedIDs))
         lastDeletedCategorySyncDate = Date()
@@ -1281,7 +1300,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - CK helpers
-
     private func deleteRecordsInBatches(ids: [CKRecord.ID], batchSize: Int = 300) async throws {
         guard !ids.isEmpty else { return }
         let unique = Array(Set(ids))
@@ -1366,7 +1384,6 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     // MARK: - Folders / Debug
-
     private func ensureLocalFolders() throws {
         try imageStore.ensureDirs()
         _ = localImagesDir

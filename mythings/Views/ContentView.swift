@@ -28,7 +28,7 @@ enum PageMode {
 }
 
 extension View {
-    /// iOS 17 之後的 onChange 使用 0 或 2 參數；iOS 16 仍是舊版 1 參數。
+
     @ViewBuilder
     func onChangeCompat<V: Equatable>(of value: V, perform action: @escaping () -> Void) -> some View {
         if #available(iOS 17, *) {
@@ -113,7 +113,8 @@ struct ContentView: View {
     // MARK: - 排序後的顯示清單
     private var displayedItems: [Item] {
         if sortKey == .none {
-            return items
+            // ✅ 預設：永遠新到舊（不吃陣列順序）
+            return items.sorted { $0.createdAt > $1.createdAt }
         } else {
             return sort(items, by: sortKey, order: sortOrder)
         }
@@ -182,6 +183,13 @@ struct ContentView: View {
                 }
             }
         }
+        
+        .onReceive(iCloudSync.$syncStatus) { status in
+                if case .success = status {
+                    loadItemsFromLocal()
+                }
+            }
+        
         // 初次載入
         .onAppear {
             loadItems()
@@ -292,15 +300,16 @@ struct ContentView: View {
                 brandStore: brandStore,
                 showManageCategories: $showManageCategories
             ) { newItem in
-                // ✅ 第二道防線：新增前再檢查一次
                 if pm.canAddItem(currentCount: items.count) {
-                    items.insert(newItem, at: 0)
+                    var stamped = newItem
+                    stamped.updatedAt = Date()          // ⭐️補上
+                    items.insert(stamped, at: 0)
+
                     selectedImage = nil
                     isAddingNewItem = false
                     saveItems()
-                    ImageCacheManager.shared.invalidateCache(for: newItem.imageName)
+                    ImageCacheManager.shared.invalidateCache(for: stamped.imageName)
                 } else {
-                    // 仍不符合 → 顯示付費牆（不自動關閉 AddItemView，讓使用者決定）
                     showPaywall = true
                 }
             }
@@ -373,7 +382,9 @@ struct ContentView: View {
             iCloudSync.schedule(.full)
             // 可選：監聽狀態回到 success 時再 loadItemsFromLocal()
             // .onReceive 或用 .onChange 監控 iCloudSync.syncStatus
+            
         }
+        
     }
     
     private func loadItemsFromLocal() {
@@ -389,7 +400,9 @@ struct ContentView: View {
                     category: item.category,
                     name: item.name,
                     price: normalizedPriceString(item.price),
-                    date: item.date
+                    date: item.date,
+                    createdAt: item.createdAt,
+                    updatedAt: item.updatedAt
                 )
             }
             items = decoded

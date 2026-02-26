@@ -505,7 +505,8 @@ private extension AddItemView {
             name: name,
             price: priceWithDollar(price),
             date: useDate ? selectedDate : existingItem?.date,
-            updatedAt: Date()                 // ⭐ 關鍵：每次編輯都刷新
+            createdAt: existingItem?.createdAt ?? Date(),   // ✅ 編輯保留
+            updatedAt: Date()                               // ✅ 每次編輯刷新
         )
 
         onComplete(item)

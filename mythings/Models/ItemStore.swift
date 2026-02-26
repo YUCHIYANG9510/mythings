@@ -19,23 +19,27 @@ class ItemStore: ObservableObject {
         loadItems()
     }
     
-    // ✅ 新增的放最前面
     func addItem(item: Item) {
-        items.insert(item, at: 0)
+        var newItem = item
+        newItem.updatedAt = Date()
+        items.insert(newItem, at: 0)
         saveItems()
     }
-    
-    // ✅ 批次新增（確保加入後順序為「最後加入的在最上方」）
+
     func addItems(_ newItems: [Item]) {
         for item in newItems.reversed() {
-            items.insert(item, at: 0)
+            var newItem = item
+            newItem.updatedAt = Date()
+            items.insert(newItem, at: 0)
         }
         saveItems()
     }
-    
+
     func updateItem(item: Item) {
         if let index = items.firstIndex(where: { $0.id == item.id }) {
-            items[index] = item
+            var updated = item
+            updated.updatedAt = Date()     // ⭐️關鍵
+            items[index] = updated
             saveItems()
         }
     }
