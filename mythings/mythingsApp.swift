@@ -15,7 +15,8 @@ struct MyThingsApp: App {
     @StateObject private var iCloudSync: iCloudSyncManager
     @StateObject private var categoryStore: CategoryStore
     @StateObject private var purchasesManager: PurchasesManager
-
+    @UIApplicationDelegateAdaptor(CloudKitAppDelegate.self) var appDelegate
+    
     init() {
         // ① RevenueCat 初始化（只呼叫一次）
         Purchases.logLevel = .debug                 // 上架前可改成 .warn

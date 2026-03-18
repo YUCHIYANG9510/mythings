@@ -38,9 +38,22 @@
 		C2D30BBF2DBA2A1B003C912B /* DeepLabV3.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = DeepLabV3.mlmodel; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F5D6E3A42F6ACE21004E8174 /* Exceptions for "mythings" folder in "mythings" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C2D30B4F2DB933D8003C912B /* mythings */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C2D30B522DB933D8003C912B /* mythings */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F5D6E3A42F6ACE21004E8174 /* Exceptions for "mythings" folder in "mythings" target */,
+			);
 			path = mythings;
 			sourceTree = "<group>";
 		};
@@ -423,6 +436,7 @@
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = mythings/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";
@@ -457,6 +471,7 @@
 				DEVELOPMENT_TEAM = FC7BJ52G9K;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = mythings/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "我們需要訪問您的相機以拍攝物品照片";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我們需要權限以將處理後的照片保存到您的照片庫";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我們需要訪問您的照片庫以選擇物品照片";

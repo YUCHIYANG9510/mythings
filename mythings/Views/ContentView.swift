@@ -190,6 +190,11 @@ struct ContentView: View {
                 }
             }
         
+        // ✅ FIX: 監聽 wipeLocalStore 通知，清空 UI
+        .onReceive(NotificationCenter.default.publisher(for: .iCloudLocalStoreWiped)) { _ in
+            items = []
+        }
+        
         // 初次載入
         .onAppear {
             loadItems()
@@ -277,7 +282,8 @@ struct ContentView: View {
             ) { newItem in
                 if let idx = items.firstIndex(where: { $0.id == editing.id }) {
                     var new = newItem
-                    new.updatedAt = Date()     // ⭐ 新增：編輯完成刷新時間
+                    // ✅ FIX: 確保 updatedAt 一定是「現在」，讓增量 push watermark 能篩到此筆
+                    new.updatedAt = Date()
                     items[idx] = new
                 }
                 ImageCacheManager.shared.invalidateCache(for: editing.imageName)

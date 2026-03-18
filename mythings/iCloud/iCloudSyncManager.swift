@@ -127,16 +127,21 @@ actor SyncCoordinator {
             return
         }
 
-        if batch.contains(.itemsChanged) || batch.contains(.categoriesChanged) {
+        // ✅ FIX: 只有 categoriesChanged（沒有 itemsChanged）時，走輕量路徑
+        //  避免每次 category 操作都 push 所有 items
+        if batch.contains(.itemsChanged) {
             try await runners.optimized()
+        } else if batch.contains(.categoriesChanged) {
+            try await runners.categoriesOnly()
         }
     }
 
     struct Runners {
         let optimized: () async throws -> Void
+        let categoriesOnly: () async throws -> Void  // ✅ FIX: 新增 categories 專用路徑
         let full: () async throws -> Void
         let deleteItem: (UUID) async throws -> Void
-        let deleteCategory: (UUID) async throws -> Void  // ⭐️ 新增
+        let deleteCategory: (UUID) async throws -> Void
         let setStatus: (iCloudSyncStatus) async -> Void
     }
 }
@@ -273,6 +278,34 @@ final class iCloudSyncManager: ObservableObject {
                 self?.kickoffIfNeeded()
             }
         }
+        // ✅ FIX: 監聽 App 從背景回到前景時觸發同步
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            self.kickoffIfNeeded()
+        }
+        // ✅ FIX: 監聽 CloudKit 遠端變更通知
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.CKAccountChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            self.kickoffIfNeeded()
+        }
+        // ✅ FIX: 監聽來自 AppDelegate 的 CloudKit 推播通知
+        NotificationCenter.default.addObserver(
+            forName: .iCloudRemoteNotificationReceived,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isEnabled else { return }
+            print("📲 iCloudSyncManager received remote notification, starting sync")
+            self.schedule(.full)
+        }
     }
 
     // MARK: - Public：統一入口（排程事件）
@@ -303,6 +336,16 @@ final class iCloudSyncManager: ObservableObject {
             optimized: { [weak self] in
                 guard let self else { return }
                 try await self.runOptimizedSync()
+            },
+            categoriesOnly: { [weak self] in
+                guard let self else { return }
+                // ✅ FIX: 若時間不足做 full sync，走輕量的 categories-only 路徑
+                let timeSinceLastSync = Date().timeIntervalSince(self.lastSyncDate ?? .distantPast)
+                if timeSinceLastSync > self.fullSyncThreshold || self.lastSyncDate == nil {
+                    try await self.runFullSync()
+                } else {
+                    try await self.runCategoriesOnlySync()
+                }
             },
             full: { [weak self] in
                 guard let self else { return }
@@ -363,6 +406,8 @@ final class iCloudSyncManager: ObservableObject {
                     Task { [weak self] in
                         try? await Task.sleep(nanoseconds: 300_000_000)
                         await self?.detectOrderIndexSupport()
+                        // ✅ FIX: 確保 CloudKit subscription 存在，接收遠端推播
+                        await self?.ensureCloudKitSubscriptions()
                         await MainActor.run { [weak self] in
                             self?.kickoffIfNeeded()
                         }
@@ -370,6 +415,79 @@ final class iCloudSyncManager: ObservableObject {
                 }
             }
         }
+    }
+
+    // ✅ FIX: 建立 CloudKit Subscription，讓其他裝置的更改能即時通知本機
+    private func ensureCloudKitSubscriptions() async {
+        let subscriptionIDs = ["item-changes-sub", "category-changes-sub"]
+        do {
+            // 先檢查是否已存在
+            // ✅ FIX: 用 perSubscriptionResultBlock 逐筆收集；fetchSubscriptionsResultBlock 只回傳 Void
+            let existingIDs = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[String], Error>) in
+                let op = CKFetchSubscriptionsOperation(subscriptionIDs: subscriptionIDs)
+                op.qualityOfService = .utility
+                var found: [String] = []
+                op.perSubscriptionResultBlock = { subID, result in
+                    if case .success = result { found.append(subID) }
+                }
+                op.fetchSubscriptionsResultBlock = { result in
+                    // 成功或失敗都回傳已收集到的 IDs（查無資料時 found 為空，照常建立）
+                    cont.resume(returning: found)
+                }
+                privateDB.add(op)
+            }
+
+            // 建立 Item subscription
+            if !existingIDs.contains("item-changes-sub") {
+                let itemSub = CKQuerySubscription(
+                    recordType: "Item",
+                    predicate: NSPredicate(value: true),
+                    subscriptionID: "item-changes-sub",
+                    options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion]
+                )
+                let itemNote = CKSubscription.NotificationInfo()
+                itemNote.shouldSendContentAvailable = true
+                itemSub.notificationInfo = itemNote
+                _ = try await dbSave(itemSub)
+                print("✅ Created Item CloudKit subscription")
+            }
+
+            // 建立 Category subscription
+            if !existingIDs.contains("category-changes-sub") {
+                let catSub = CKQuerySubscription(
+                    recordType: "Category",
+                    predicate: NSPredicate(value: true),
+                    subscriptionID: "category-changes-sub",
+                    options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion]
+                )
+                let catNote = CKSubscription.NotificationInfo()
+                catNote.shouldSendContentAvailable = true
+                catSub.notificationInfo = catNote
+                _ = try await dbSave(catSub)
+                print("✅ Created Category CloudKit subscription")
+            }
+        } catch {
+            print("⚠️ CloudKit subscription setup failed (non-fatal): \(error)")
+        }
+    }
+
+    // helper overload for saving subscriptions
+    private func dbSave(_ subscription: CKSubscription) async throws -> CKSubscription {
+        try await withCheckedThrowingContinuation { cont in
+            privateDB.save(subscription) { saved, error in
+                if let error { cont.resume(throwing: error) }
+                else if let saved { cont.resume(returning: saved) }
+                else { cont.resume(throwing: CKError(.internalError)) }
+            }
+        }
+    }
+
+    // ✅ FIX: 公開方法，由 AppDelegate/SceneDelegate 呼叫以處理遠端推播
+    func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) {
+        let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
+        guard notification?.notificationID != nil else { return }
+        print("📲 Received CloudKit remote notification, triggering sync")
+        kickoffIfNeeded()
     }
 
     private func detectOrderIndexSupport() async {
@@ -460,6 +578,14 @@ final class iCloudSyncManager: ObservableObject {
         try await pullRemoteChanges()
     }
 
+    // ✅ FIX: 當只有 categoriesChanged 時，用這個更精準的路徑
+    private func runCategoriesOnlySync() async throws {
+        try Task.checkCancellation()
+        try ensureLocalFolders()
+        try await pushCategoriesOnly()
+        try await pullCategoriesSince(lastCategorySyncDate)
+    }
+
     private func pushLocalChanges() async throws {
         let items = loadLocalItems()
         let categories = loadLocalCategories()
@@ -471,9 +597,25 @@ final class iCloudSyncManager: ObservableObject {
             try await pushItemsWithRetry(recentItems)
         }
 
-        if !categories.isEmpty {
-            try await pushCategoriesWithRetry(categories)
+        // ✅ FIX: 增量同步時 categories 也只 push 有變動的（用 lastCategorySyncDate watermark）
+        // 全量 push 所有 categories 會造成每次同步都更新 updatedAt，讓順序持續飄移
+        let catWatermark = lastCategorySyncDate.addingTimeInterval(-clockSkewLeeway)
+        // Category 沒有 updatedAt 欄位在本機 struct，但我們需要推送全部讓雲端保持最新 orderIndex
+        // 解法：只在 categoriesChanged 事件被觸發時才推，此方法只被 runIncrementalSync 呼叫
+        // 因此在這裡用時間判斷：距上次 categorySyncDate 超過 leeway 才推
+        let timeSinceCatSync = Date().timeIntervalSince(lastCategorySyncDate)
+        if timeSinceCatSync > clockSkewLeeway || catWatermark == .distantPast.addingTimeInterval(-clockSkewLeeway) {
+            if !categories.isEmpty {
+                try await pushCategoriesWithRetry(categories)
+            }
         }
+    }
+
+    // ✅ FIX: 新增一個只 push categories 的方法，由 categoriesChanged 事件專用
+    private func pushCategoriesOnly() async throws {
+        let categories = loadLocalCategories()
+        guard !categories.isEmpty else { return }
+        try await pushCategoriesWithRetry(categories)
     }
 
     private func pullRemoteChanges() async throws {
@@ -626,6 +768,9 @@ final class iCloudSyncManager: ObservableObject {
         var local = loadLocalCategories()
         var maxCloudUpdatedAt: Date = lastCategorySyncDate
 
+        // ✅ FIX: 收集每筆 record 的 orderIndex，用來在 merge 後重排
+        var idToOrderIndex: [UUID: Int] = [:]
+
         for record in changes {
             guard
                 let idStr = record["id"] as? String,
@@ -637,12 +782,26 @@ final class iCloudSyncManager: ObservableObject {
             let cloudUpdatedAt = record["updatedAt"] as? Date ?? .distantPast
             if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }
 
+            // ✅ FIX: 讀取 orderIndex
+            if let ord = (record["orderIndex"] as? NSNumber)?.intValue {
+                idToOrderIndex[uuid] = ord
+            }
+
             let updatedCategory = Category(id: uuid, name: name, emoji: emoji)
 
             if let index = local.firstIndex(where: { $0.id == uuid }) {
                 local[index] = updatedCategory
             } else if !local.contains(where: { normalizeCategoryKey($0.name) == normalizeCategoryKey(name) }) {
                 local.append(updatedCategory)
+            }
+        }
+
+        // ✅ FIX: 若有 orderIndex 資料，按雲端順序重排（只排有拿到 orderIndex 的項目）
+        if !idToOrderIndex.isEmpty {
+            local.sort { a, b in
+                let ia = idToOrderIndex[a.id] ?? Int.max
+                let ib = idToOrderIndex[b.id] ?? Int.max
+                return ia < ib
             }
         }
 
@@ -732,10 +891,10 @@ final class iCloudSyncManager: ObservableObject {
         rec["price"] = item.price as CKRecordValue
         if let d = item.date { rec["date"] = d as CKRecordValue }
 
-        // ✅ updatedAt：仍用 stamped（避免過去時間）
-        let now = Date()
-        let stamped = max(item.updatedAt, now)
-        rec["updatedAt"] = stamped as CKRecordValue
+        // ✅ FIX: updatedAt 直接用 item.updatedAt，不要加上 max(now)
+        //  原本 max(item.updatedAt, now) 會讓 push 時間永遠是「現在」
+        //  這導致手機 pull 時看到的 updatedAt 比 lastItemSyncDate 新，誤以為有新資料，造成重複 pull loop
+        rec["updatedAt"] = item.updatedAt as CKRecordValue
 
         // ✅ createdAt：只在雲端沒有時才補上（避免被後續 sync 覆蓋）
         if rec["createdAt"] == nil {
@@ -968,12 +1127,14 @@ final class iCloudSyncManager: ObservableObject {
         var toDelete: [CKRecord.ID] = []
         for r in allRecords {
             let id = r.recordID
+            // ✅ FIX: 移除重複的 !keepKeys.contains(id) 判斷，只刪不在 keepKeys 的舊格式記錄
             if !keepKeys.contains(id) {
+                // 只刪除舊格式（category- 開頭但不是 category-name- 開頭）
+                // category-name- 開頭的是目前格式，不應刪除，除非不在 keepKeys
                 if id.recordName.hasPrefix("category-") && !id.recordName.hasPrefix("category-name-") {
                     toDelete.append(id)
-                } else if !keepKeys.contains(id) {
-                    toDelete.append(id)
                 }
+                // ✅ FIX: 移除了原本錯誤的 else if，它會把所有 category-name- 開頭但不在 keepKeys 的也刪掉
             }
         }
         if !toDelete.isEmpty {
@@ -1068,6 +1229,9 @@ final class iCloudSyncManager: ObservableObject {
         lastCategorySyncDate = .distantPast
         lastDeletedSyncDate = .distantPast
         lastDeletedCategorySyncDate = .distantPast
+
+        // ✅ FIX: 通知 UI 重新載入，讓畫面清空（不再顯示已刪的舊資料）
+        NotificationCenter.default.post(name: .iCloudLocalStoreWiped, object: nil)
 
         print("🧹 Wiped local store (items.json, categories.json, images/*) and reset sync timestamps.")
     }
@@ -1407,4 +1571,10 @@ final class iCloudSyncManager: ObservableObject {
         print("categories.json exists: \(fm.fileExists(atPath: localCategoriesURL.path))")
         print("=== End Debug ===")
     }
+}
+
+// MARK: - Notification Names
+extension Notification.Name {
+    static let iCloudLocalStoreWiped = Notification.Name("iCloudLocalStoreWiped")
+    // iCloudRemoteNotificationReceived is defined in CloudKitAppDelegate.swift
 }
