@@ -48,12 +48,10 @@ struct FlowLayout: Layout {
                 y += lineHeight + runSpacing
                 lineHeight = 0
             }
-
             sub.place(
                 at: CGPoint(x: x, y: y),
                 proposal: ProposedViewSize(width: size.width, height: size.height)
             )
-
             x += size.width + spacing
             lineHeight = max(lineHeight, size.height)
         }
@@ -74,26 +72,38 @@ struct AddItemView: View {
     // form states
     @State private var name: String = ""
     @State private var brand: String = ""
-    @State private var category: String = ""
+
+    // ✅ 核心改動：改用 UUID? 儲存選擇的 category
+    // UI 顯示仍用 categoryStore.name(for:)，完全不影響現有外觀
+    @State private var categoryID: UUID? = nil
+
     @State private var price: String = ""
     @State private var showValidationAlert = false
 
-    // 原本就有的：控制相簿 / 分類 sheet
-    @State private var showImagePicker = false           // 保留，但不再直接用它；由選單控制
-    @State private var showCategorySheet = false         // ✅ 點分類按鈕只開這個
+    @State private var showImagePicker = false
+    @State private var showCategorySheet = false
 
-    // 新增：影像來源選單 + 相機
     @State private var showImageSourceMenu = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
 
-    // Edit Photo（資料驅動；用 Bool sheet）
     @State private var pendingPhoto: UIImage?
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
 
-    // Date (optional)
     @State private var useDate = false
     @State private var selectedDate = Date()
+
+    // ✅ 便利屬性：取目前選中 category 的 name（顯示用）
+    private var selectedCategoryName: String {
+        guard let id = categoryID else { return "" }
+        return categoryStore.name(for: id)
+    }
+
+    // ✅ 便利屬性：取目前選中 category 的 emoji
+    private var selectedCategoryEmoji: String {
+        guard let id = categoryID else { return "🧩" }
+        return categoryStore.category(for: id)?.emoji ?? "🧩"
+    }
 
     var body: some View {
         NavigationView {
@@ -124,7 +134,6 @@ struct AddItemView: View {
             }
         }
 
-        // 相簿
         .sheet(isPresented: $showPhotoPicker) {
             PhotoPicker(
                 selectedImage: Binding<UIImage?>(
@@ -137,8 +146,6 @@ struct AddItemView: View {
             )
         }
 
-
-        // 相機
         .sheet(isPresented: $showCamera) {
             CameraPicker(
                 selectedImage: Binding<UIImage?>(
@@ -150,8 +157,6 @@ struct AddItemView: View {
             )
         }
 
-
-        // Edit Photo（可選是否去背）
         .sheet(
             isPresented: Binding(
                 get: { pendingPhoto != nil },
@@ -173,8 +178,6 @@ struct AddItemView: View {
             }
         }
 
-
-        // ✅ 只在外部有需求時才會開 Manage 頁（不影響分類按鈕）
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
                 .presentationDetents([.large])
@@ -185,22 +188,25 @@ struct AddItemView: View {
         .alert("Please complete all fields", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) {}
         }
-        
+
         .sheet(isPresented: $showCategorySheet) {
             categorySheet
         }
-        
-        // iOS 17 新式 onChange（零參數）
+
+        // ✅ Manage 關閉後，若目前選的 category 已被刪除，自動切到第一個
         .onChange(of: showManageCategories) {
             if !showManageCategories {
-                let exists = categoryStore.categories.contains { $0.name == category }
-                if !exists {
-                    category = categoryStore.categories.first?.name ?? ""
+                if let id = categoryID {
+                    let stillExists = categoryStore.categories.contains { $0.id == id }
+                    if !stillExists {
+                        categoryID = categoryStore.categories.first?.id
+                    }
+                } else {
+                    categoryID = categoryStore.categories.first?.id
                 }
             }
         }
 
-        // 影像來源選單：相簿 / 拍照 / 移除
         .confirmationDialog("Update Image", isPresented: $showImageSourceMenu, titleVisibility: .visible) {
             Button("Choose from Library") { showPhotoPicker = true }
             Button("Take Photo") { showCamera = true }
@@ -218,13 +224,12 @@ private extension AddItemView {
         colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06)
     }
 
-    // ✅ 恢復原本行為：只開 categorySheet
     var categoryButton: some View {
         Button { showCategorySheet = true } label: {
-            let emoji = categoryStore.categories.first(where: { $0.name == category })?.emoji ?? "🧩"
             HStack(spacing: 8) {
-                Text(emoji)
-                Text(category.isEmpty ? "Select Category" : category)
+                // ✅ emoji 和名稱都透過 computed property 取得，外觀完全不變
+                Text(selectedCategoryEmoji)
+                Text(categoryID == nil ? "Select Category" : selectedCategoryName)
                     .font(.headline)
                     .foregroundColor(.primary)
                 Image(systemName: "chevron.right")
@@ -244,7 +249,7 @@ private extension AddItemView {
                 .frame(maxWidth: .infinity)
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .onTapGesture { showImageSourceMenu = true }   // ← 用選單（相簿/拍照）
+                .onTapGesture { showImageSourceMenu = true }
         } else {
             VStack(spacing: 10) {
                 Image(systemName: "photo").font(.system(size: 40))
@@ -254,7 +259,7 @@ private extension AddItemView {
             .frame(height: 220)
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .onTapGesture { showImageSourceMenu = true }       // ← 用選單（相簿/拍照）
+            .onTapGesture { showImageSourceMenu = true }
         }
     }
 
@@ -274,7 +279,6 @@ private extension AddItemView {
     var brandSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Brand").font(.footnote).foregroundColor(.secondary)
-
             VStack(spacing: 16) {
                 TextField("Brand Name", text: $brand)
                     .textInputAutocapitalization(.words)
@@ -314,14 +318,14 @@ private extension AddItemView {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
-                .background(Color(UIColor.label)) // 固定主色（淺色=黑，深色=白）
+                .background(Color(UIColor.label))
                 .foregroundColor(Color(UIColor.systemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 28))
         }
         .padding(.top, 10)
     }
 
-    // ✅ 保持你原來的 categorySheet
+    // ✅ categorySheet：選取後存 UUID，顯示用 name 比對 checkmark
     @ViewBuilder
     var categorySheet: some View {
         NavigationStack {
@@ -333,14 +337,14 @@ private extension AddItemView {
                 } else {
                     ForEach(categoryStore.categories) { c in
                         Button {
-                            category = c.name
+                            categoryID = c.id   // ✅ 存 UUID
                             showCategorySheet = false
                         } label: {
                             HStack(spacing: 12) {
                                 Text(c.emoji)
                                 Text(c.name)
                                     .foregroundColor(.primary)
-                                if c.name == category {
+                                if c.id == categoryID {   // ✅ 用 UUID 比對 checkmark
                                     Spacer()
                                     Image(systemName: "checkmark")
                                         .foregroundColor(.secondary)
@@ -361,132 +365,100 @@ private extension AddItemView {
 // MARK: - Logic
 private extension AddItemView {
     func configureInitialValues() {
-            if let item = existingItem {
-                name = item.name
-                brand = item.brand
-                category = item.category
-                price = item.price.replacingOccurrences(of: "$", with: "")
+        if let item = existingItem {
+            name  = item.name
+            brand = item.brand
+            // ✅ 編輯時：直接用 categoryID，不需要 name 轉換
+            categoryID = item.categoryID
+            price = item.price.replacingOccurrences(of: "$", with: "")
 
-                // ✅ 修正：編輯模式下，總是嘗試載入現有圖片
-                // 不管外部 selectedImage 是什麼狀態
-                if let img = loadImage(named: item.imageName) {
-                    selectedImage = img
-                    print("✅ Loaded existing image: \(item.imageName)")
-                } else {
-                    print("⚠️ Failed to load image: \(item.imageName)")
-                    // 可選：設置為 nil 確保顯示 "Tap to add image"
-                    selectedImage = nil
-                }
+            if let img = loadImage(named: item.imageName) {
+                selectedImage = img
+                print("✅ Loaded existing image: \(item.imageName)")
+            } else {
+                print("⚠️ Failed to load image: \(item.imageName)")
+                selectedImage = nil
+            }
 
-                if let d = item.date {
-                    useDate = true
-                    selectedDate = d
-                } else {
-                    useDate = false
-                }
-            } else if !categoryStore.categories.isEmpty {
-                category = categoryStore.categories[0].name
+            if let d = item.date {
+                useDate = true
+                selectedDate = d
+            } else {
                 useDate = false
             }
+        } else if !categoryStore.categories.isEmpty {
+            // ✅ 新增時：預設選第一個 category 的 UUID
+            categoryID = categoryStore.categories.first?.id
+            useDate = false
         }
+    }
+
     /// 優先從 Images/ 讀圖；若找不到，回退到 Documents/（舊版相容）
     func loadImage(named fileName: String) -> UIImage? {
-           // ✅ 增加除錯資訊
-           print("🔍 Loading image: \(fileName)")
-           
-           // 新目錄（你現在的儲存位置）
-           let newURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
-           print("📂 Checking new path: \(newURL.path)")
-           
-           if FileManager.default.fileExists(atPath: newURL.path) {
-               print("✅ File exists at new path")
-               if let img = UIImage(contentsOfFile: newURL.path) {
-                   print("✅ Successfully loaded from new path")
-                   return img
-               } else {
-                   print("❌ Failed to create UIImage from new path")
-               }
-           } else {
-               print("❌ File not found at new path")
-           }
+        print("🔍 Loading image: \(fileName)")
 
-           // 舊目錄（舊版資料還在 Documents 時）
-           let oldURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
-           print("📂 Checking old path: \(oldURL.path)")
-           
-           if FileManager.default.fileExists(atPath: oldURL.path) {
-               print("✅ File exists at old path")
-               if let img = UIImage(contentsOfFile: oldURL.path) {
-                   print("✅ Successfully loaded from old path")
-                   return img
-               } else {
-                   print("❌ Failed to create UIImage from old path")
-               }
-           } else {
-               print("❌ File not found at old path")
-           }
+        let newURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: newURL.path) {
+            if let img = UIImage(contentsOfFile: newURL.path) {
+                return img
+            }
+        }
 
-           // 再退一步：如果舊資料沒有副檔名，嘗試加上 .png
-           if !fileName.lowercased().hasSuffix(".png") {
-               let withExt = fileName + ".png"
-               print("🔍 Trying with .png extension: \(withExt)")
-               
-               let newURL2 = FileManager.imagesDirectory.appendingPathComponent(withExt)
-               if FileManager.default.fileExists(atPath: newURL2.path),
-                  let img = UIImage(contentsOfFile: newURL2.path) {
-                   print("✅ Successfully loaded with .png from new path")
-                   return img
-               }
-               
-               let oldURL2 = FileManager.documentsDirectory.appendingPathComponent(withExt)
-               if FileManager.default.fileExists(atPath: oldURL2.path),
-                  let img = UIImage(contentsOfFile: oldURL2.path) {
-                   print("✅ Successfully loaded with .png from old path")
-                   return img
-               }
-           }
+        let oldURL = FileManager.documentsDirectory.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: oldURL.path) {
+            if let img = UIImage(contentsOfFile: oldURL.path) {
+                return img
+            }
+        }
 
-           print("❌ All image loading attempts failed for: \(fileName)")
-           return nil
-       }
-    
+        if !fileName.lowercased().hasSuffix(".png") {
+            let withExt = fileName + ".png"
+            let newURL2 = FileManager.imagesDirectory.appendingPathComponent(withExt)
+            if FileManager.default.fileExists(atPath: newURL2.path),
+               let img = UIImage(contentsOfFile: newURL2.path) {
+                return img
+            }
+            let oldURL2 = FileManager.documentsDirectory.appendingPathComponent(withExt)
+            if FileManager.default.fileExists(atPath: oldURL2.path),
+               let img = UIImage(contentsOfFile: oldURL2.path) {
+                return img
+            }
+        }
+
+        print("❌ All image loading attempts failed for: \(fileName)")
+        return nil
+    }
+
     func priceWithDollar(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         return trimmed.hasPrefix("$") ? trimmed : "$" + trimmed
     }
 
-    // 在 AddItemView 中修正 saveTapped 方法
     private func saveTapped() {
         if !isFormValid() {
             showValidationAlert = true
             return
         }
 
-        // 無論新建或編輯，都固定採用既有或新建的 UUID 作為檔名
         let itemId = existingItem?.id ?? UUID()
         var finalImageName = existingItem?.imageName ?? "\(itemId.uuidString).png"
 
-        // 僅在「新增」或「編輯時選了新圖」才寫檔。編輯但未選圖時，沿用舊圖名稱與檔案。
         if let newImage = selectedImage {
             let fileName = "\(itemId.uuidString).png"
             let fileURL = FileManager.imagesDirectory.appendingPathComponent(fileName)
             do {
                 try FileManager.default.createDirectory(at: FileManager.imagesDirectory, withIntermediateDirectories: true)
                 guard let imageData = newImage.pngData() else {
-                    print("❌ Failed to convert image to PNG data")
                     showValidationAlert = true
                     return
                 }
-                // 若檔名不同且有舊檔，刪除舊檔
                 if let existingItem = existingItem, existingItem.imageName != fileName {
                     let oldURL = FileManager.imagesDirectory.appendingPathComponent(existingItem.imageName)
                     if FileManager.default.fileExists(atPath: oldURL.path) {
                         try? FileManager.default.removeItem(at: oldURL)
-                        print("🗑️ Removed old image: \(existingItem.imageName)")
                     }
                 }
                 try imageData.write(to: fileURL)
-                print("💾 Saved image to Images/: \(fileName) (size: \(imageData.count) bytes)")
                 finalImageName = fileName
                 ImageCacheManager.shared.invalidateCache(for: fileName)
             } catch {
@@ -496,30 +468,32 @@ private extension AddItemView {
             }
         }
 
-        // 組合輸出的 Item（若未變更圖片，finalImageName 會沿用舊值）
+        // ✅ 核心改動：傳入 categoryID（UUID）而非 category name
+        // categoryID 此時一定有值（isFormValid 已確保）
         let item = Item(
             id: itemId,
             imageName: finalImageName,
             brand: brand,
-            category: category,
+            categoryID: categoryID ?? categoryStore.categories.first!.id,
             name: name,
             price: priceWithDollar(price),
             date: useDate ? selectedDate : existingItem?.date,
-            createdAt: existingItem?.createdAt ?? Date(),   // ✅ 編輯保留
-            updatedAt: Date()                               // ✅ 每次編輯刷新
+            createdAt: existingItem?.createdAt ?? Date(),
+            updatedAt: Date()
         )
 
         onComplete(item)
     }
+
     func isFormValid() -> Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
         !brand.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !category.isEmpty &&
+        categoryID != nil &&        // ✅ 改為檢查 UUID 是否有值
         !price.trimmingCharacters(in: .whitespaces).isEmpty
     }
 }
 
-// MARK: - Brand Chips（換行 + 新增/刪除；選取以黑色框線高亮）
+// MARK: - Brand Chips
 @available(iOS 16.0, *)
 private struct BrandChipsView: View {
     @ObservedObject var brandStore: BrandStore
@@ -575,7 +549,6 @@ private struct BrandChipsView: View {
     }
 }
 
-// 一顆可刪除的 chip（選取時用黑色框線高亮）
 private struct RemovableChip: View {
     let title: String
     let isSelected: Bool
@@ -586,8 +559,7 @@ private struct RemovableChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: onSelect) {
-                Text(title)
-                    .font(.subheadline)
+                Text(title).font(.subheadline)
             }
             .buttonStyle(.plain)
 
@@ -611,7 +583,6 @@ private struct RemovableChip: View {
     }
 }
 
-// MARK: - Reusable labeled text field
 private struct LabeledTextField: View {
     let title: String
     let placeholder: String

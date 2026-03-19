@@ -11,14 +11,12 @@ struct SettingsView: View {
     @ObservedObject var categoryStore: CategoryStore
     @EnvironmentObject var iCloudSync: iCloudSyncManager
 
-    // Delete All Things
     @Binding var items: [Item]
     let saveItems: () -> Void
 
     @State private var showingDeleteAllAlert = false
     @State private var isDeletingAll = false
 
-    // 🔑 RevenueCat
     @EnvironmentObject var pm: PurchasesManager
     @State private var navToICloud = false
     @State private var showPaywall = false
@@ -31,19 +29,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            // MARK: - CATEGORIES
             Section("CATEGORIES") {
                 NavigationLink("Manage Categories") {
                     ManageCategoriesView(categoryStore: categoryStore)
                 }
             }
 
-            // MARK: - APPEARANCE
             Section("APPEARANCE") {
                 Toggle("Dark Mode", isOn: $isDarkMode)
             }
 
-            // MARK: - ICLOUD
             Section("ICLOUD") {
                 Button {
                     if pm.canUseICloud {
@@ -66,8 +61,6 @@ struct SettingsView: View {
                 }
             }
 
-            // MARK: - ICLOUD • DEBUG
-            // 建議僅在 DEBUG build 顯示；若要正式版也可顯示，移除 #if DEBUG 即可
             #if DEBUG
             Section("ICLOUD • DEBUG") {
                 NavigationLink {
@@ -78,7 +71,6 @@ struct SettingsView: View {
             }
             #endif
 
-            // MARK: - JOIN PRO (單一欄位卡片式)
             Section {
                 if pm.isPro {
                     ProActiveCard {
@@ -95,7 +87,6 @@ struct SettingsView: View {
                 }
             }
 
-            // MARK: - DANGER ZONE
             Section {
                 Button("Delete All Things") {
                     showingDeleteAllAlert = true
@@ -111,22 +102,15 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-
-        // ✅ 把 navigationDestination 掛在 Form 之後（而不是 Section 內）
         .navigationDestination(isPresented: $navToICloud) {
             ICloudSyncSettingsView()
         }
-
-        // 共用一個 Paywall sheet
         .sheet(isPresented: $showPaywall) {
             PaywallView().environmentObject(pm)
         }
-
-        // Pro 狀態頁
         .sheet(isPresented: $showProStatus) {
             ProStatusView().environmentObject(pm)
         }
-
         .alert("Delete All Things", isPresented: $showingDeleteAllAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete All", role: .destructive) { deleteAllItems() }
@@ -136,29 +120,23 @@ struct SettingsView: View {
         .listStyle(.insetGrouped)
     }
 
-    // 刪除所有物件（本地優先，且逐筆排程雲端刪除）
     private func deleteAllItems() {
         guard !items.isEmpty else { return }
         isDeletingAll = true
 
-        // ⭐️ 先把所有要刪除的 IDs 存起來（因為等下就會把 items 清掉）
         let ids = items.map { $0.id }
 
         Task {
-            // 刪本機圖片與資料
             await deleteAllImageFiles()
             await MainActor.run {
                 items.removeAll()
-                saveItems()              // 落盤，避免殘資料
+                saveItems()
             }
-
-            // ⭐️ 關鍵：逐筆排程雲端刪除，避免 full/pull 時被拉回
             if iCloudSync.isEnabled {
                 for id in ids {
                     iCloudSync.schedule(.deleteItem(id))
                 }
             }
-
             await MainActor.run { isDeletingAll = false }
             ImageCacheManager.shared.invalidateCache()
         }
@@ -177,7 +155,6 @@ struct SettingsView: View {
     }
 }
 
-/// 參考附圖的「Join Pro」卡片
 private struct JoinProCard: View {
     var onTap: () -> Void
 
@@ -214,7 +191,6 @@ private struct JoinProCard: View {
                     RoundedRectangle(cornerRadius: 100, style: .continuous)
                         .stroke(Color(hex: "BCDFFF"), lineWidth: 1)
                 )
-
             }
             .padding(.vertical, 32)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -234,7 +210,6 @@ private struct JoinProCard: View {
     }
 }
 
-/// 已訂閱時顯示的卡片（You're Pro）
 private struct ProActiveCard: View {
     var onTap: () -> Void
 
@@ -269,7 +244,6 @@ private struct ProActiveCard: View {
                     RoundedRectangle(cornerRadius: 100, style: .continuous)
                         .stroke(Color(hex: "BCDFFF"), lineWidth: 1)
                 )
-
             }
             .padding(.vertical, 32)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -289,7 +263,6 @@ private struct ProActiveCard: View {
     }
 }
 
-// 簡單的導航到 Pro 狀態頁的輔助
 private extension SettingsView {
     func navigateToProStatus() {
         showProStatus = true
@@ -310,35 +283,37 @@ extension Color {
     }
 }
 
-#Preview {
-    // 測試用 CategoryStore
-    let previewCategoryStore = CategoryStore()
-    previewCategoryStore.categories = [
+// ✅ 把準備工作移到 #Preview 外，避免 result builder 型別推斷錯誤
+@MainActor
+private func makeSettingsPreview() -> some View {
+    let store = CategoryStore()
+    store.categories = [
         Category(name: "3C Device", emoji: "🎧"),
         Category(name: "Clothes", emoji: "👕")
     ]
-
-    // 測試用 iCloudSyncManager
-    let previewSync = iCloudSyncManager()
-
-    // 測試用 items（常數）
+    let sampleCategoryID = store.categories.first?.id ?? UUID()
     let sampleItems: [Item] = [
-        Item(id: UUID(),
-             imageName: "test.png",
-             brand: "Apple",
-             category: "3C Device",
-             name: "AirPods",
-             price: "$199",
-             date: Date())
+        Item(
+            id: UUID(),
+            imageName: "test.png",
+            brand: "Apple",
+            categoryID: sampleCategoryID,
+            name: "AirPods",
+            price: "$199",
+            date: Date()
+        )
     ]
-
     return NavigationStack {
         SettingsView(
-            categoryStore: previewCategoryStore,
-            items: .constant(sampleItems),        // Preview 用常數 Binding
-            saveItems: { /* no-op in preview */ }
+            categoryStore: store,
+            items: .constant(sampleItems),
+            saveItems: { }
         )
-        .environmentObject(previewSync)          // 注入 iCloudSync
-        .environmentObject(PurchasesManager())   // 注入 PurchasesManager
+        .environmentObject(iCloudSyncManager())
+        .environmentObject(PurchasesManager())
     }
+}
+
+#Preview {
+    makeSettingsPreview()
 }

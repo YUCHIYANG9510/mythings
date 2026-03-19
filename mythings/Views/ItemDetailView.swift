@@ -2,13 +2,10 @@
 //  ItemDetailView.swift
 //  mythings
 //
-//  Created by Designer on 2025/4/29.
-//
 
 import SwiftUI
 import UIKit
 
-// MARK: - 設備類型偵測
 extension UIDevice {
     static var isIPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -16,19 +13,16 @@ extension UIDevice {
 }
 
 struct ItemDetailView: View {
-    // 必要參數
     let categoryStore: CategoryStore
     let brandStore: BrandStore
     var onEdited: ((Item) -> Void)? = nil
 
-    // 內部狀態：用 state 保存目前顯示的 item（編輯後可即時更新）
     @State private var item: Item
     @Environment(\.dismiss) private var dismiss
 
     @State private var image: UIImage?
     @StateObject private var cacheManager = ImageCacheManager.shared
 
-    // 開啟編輯用
     @State private var showEdit = false
     @State private var editImage: UIImage?
 
@@ -44,18 +38,16 @@ struct ItemDetailView: View {
 
     var body: some View {
         if UIDevice.isIPad {
-            // iPad 版本：更寬敞的排版
             iPadLayout
         } else {
-            // iPhone 版本：保持原有排版
             iPhoneLayout
         }
     }
-    
-    // MARK: - iPhone 排版（原有的）
+
+    // MARK: - iPhone 排版
+
     private var iPhoneLayout: some View {
         VStack(spacing: 8) {
-            // Top bar: 左邊日期、右邊編輯
             HStack {
                 if let d = item.date {
                     HStack(spacing: 6) {
@@ -87,7 +79,6 @@ struct ItemDetailView: View {
             .padding(.horizontal, 32)
             .padding(.vertical, 8)
 
-            // 圖片
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
@@ -96,12 +87,12 @@ struct ItemDetailView: View {
                     .padding(.horizontal)
             }
 
-            // 文字資訊
             Text(item.name)
                 .font(.title2)
                 .padding(.top, 6)
 
-            Text("\(item.brand) · \(item.category)")
+            // ✅ 核心改動：從 categoryStore 用 UUID 查 name，不再讀 item.category
+            Text("\(item.brand) · \(categoryStore.name(for: item.categoryID))")
                 .foregroundColor(.gray)
 
             Text(formattedPrice(from: item.price))
@@ -124,11 +115,11 @@ struct ItemDetailView: View {
             }
         }
     }
-    
-    // MARK: - iPad 排版（與 iPhone 相似，只做最小調整）
+
+    // MARK: - iPad 排版
+
     private var iPadLayout: some View {
         VStack(spacing: 8) {
-            // Top bar: 左邊日期、右邊編輯
             HStack {
                 if let d = item.date {
                     HStack(spacing: 6) {
@@ -160,21 +151,20 @@ struct ItemDetailView: View {
             .padding(.horizontal, 32)
             .padding(.vertical, 8)
 
-            // 圖片 - iPad 上稍微大一點
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(height: 400) // iPad 上圖片高一點
+                    .frame(height: 400)
                     .padding(.horizontal)
             }
 
-            // 文字資訊
             Text(item.name)
                 .font(.title2)
                 .padding(.top, 6)
 
-            Text("\(item.brand) · \(item.category)")
+            // ✅ 核心改動：從 categoryStore 用 UUID 查 name
+            Text("\(item.brand) · \(categoryStore.name(for: item.categoryID))")
                 .foregroundColor(.gray)
 
             Text(formattedPrice(from: item.price))
@@ -182,7 +172,7 @@ struct ItemDetailView: View {
                 .padding(.top, 2)
         }
         .padding(.bottom)
-        .frame(maxWidth: 600) // 限制最大寬度，讓內容在 iPad 上不會太寬
+        .frame(maxWidth: 600)
         .onTapGesture { dismiss() }
         .onAppear(perform: loadImage)
         .onChangeCompat(of: cacheManager.cacheInvalidationTrigger) { loadImage() }
@@ -200,6 +190,7 @@ struct ItemDetailView: View {
     }
 
     // MARK: - 共用方法
+
     private func loadImage() {
         let fileName = (item.imageName as NSString).lastPathComponent
         guard !fileName.isEmpty else {
@@ -210,31 +201,25 @@ struct ItemDetailView: View {
             self.image = img
         }
     }
-    
-    private func formattedPrice(from raw: String) -> String {
-        // 只取數字與小數點
-        let digits = raw.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)
 
+    private func formattedPrice(from raw: String) -> String {
+        let digits = raw.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)
         guard let value = Double(digits) else {
-            // 解析失敗就原樣（補一個 $）
             return raw.hasPrefix("$") ? raw : "$" + raw
         }
-
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
         f.usesGroupingSeparator = true
-
         let grouped = f.string(from: NSNumber(value: value)) ?? digits
         return "$" + grouped
     }
-    
+
     private func handleItemUpdate(_ updated: Item) {
         let oldName = item.imageName
         self.item = updated
         self.editImage = nil
 
-        // ✅ 指定 key 清除
         ImageCacheManager.shared.invalidateCache(for: oldName)
         if oldName != updated.imageName {
             ImageCacheManager.shared.invalidateCache(for: updated.imageName)

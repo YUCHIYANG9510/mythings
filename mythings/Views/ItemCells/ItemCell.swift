@@ -2,25 +2,25 @@
 //  ItemCell.swift
 //  mythings
 //
-//  Created by Designer on 2025/8/15.
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ItemCell: View {
     let item: Item
+    let categoryStore: CategoryStore          // ✅ 新增：用來查 category 名稱
     @Binding var selectedItem: Item?
     @Binding var editingItem: Item?
     @Binding var items: [Item]
     let saveItems: () -> Void
-    
+
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ItemImageView(imageName: item.imageName)
-            Text("\(item.brand) · \(item.category)")
+            // ✅ 改用 categoryStore.name(for:) 取得分類名稱
+            Text("\(item.brand) · \(categoryStore.name(for: item.categoryID))")
                 .font(.caption).foregroundColor(.gray)
             HStack {
                 Text(item.name).font(.subheadline).lineLimit(1)
@@ -38,24 +38,19 @@ struct ItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                // 先本機刪除 + 落盤（仍會送出 itemsChanged 事件）
                 items.removeAll { $0.id == item.id }
                 saveItems()
 
-                // ✅ 清縮圖快取，避免殘影
                 if !item.imageName.isEmpty {
                     ImageCacheManager.shared.invalidateCache(for: item.imageName)
                 }
 
-                // 再交給協調器安排雲端刪除；與 itemsChanged 會被合併處理，避免併發
                 if iCloudSync.isEnabled {
                     iCloudSync.schedule(.deleteItem(item.id))
-                    iCloudSync.kickoffIfNeeded()   // ⭐️ 新增這行
+                    iCloudSync.kickoffIfNeeded()
                 }
             }
         }
-
-        // ✅ 加上拖曳&放置
         .onDrag {
             ItemDragStore.shared.draggingID = item.id
             return NSItemProvider(object: item.id.uuidString as NSString)
@@ -67,5 +62,3 @@ struct ItemCell: View {
                                                   onCommit: saveItems))
     }
 }
-
-

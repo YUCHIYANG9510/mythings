@@ -2,8 +2,6 @@
 //  Item.swift
 //  mythings
 //
-//  Created by Designer on 2025/4/29.
-//
 
 import Foundation
 
@@ -11,19 +9,22 @@ struct Item: Identifiable, Codable {
     let id: UUID
     let imageName: String
     let brand: String
-    let category: String
+
+    // ✅ 根本解法：儲存 Category 的 UUID，改名後自動對應
+    var categoryID: UUID
+
     let name: String
     let price: String
     let date: Date?
-    
-    var createdAt: Date      // ✅ 新增：建立時間（排序依據）
-    var updatedAt: Date      // 已有：最後編輯時間（增量同步依據）
+
+    var createdAt: Date
+    var updatedAt: Date
 
     init(
         id: UUID = UUID(),
         imageName: String,
         brand: String,
-        category: String,
+        categoryID: UUID,
         name: String,
         price: String,
         date: Date? = nil,
@@ -33,7 +34,7 @@ struct Item: Identifiable, Codable {
         self.id = id
         self.imageName = imageName
         self.brand = brand
-        self.category = category
+        self.categoryID = categoryID
         self.name = name
         self.price = price
         self.date = date
@@ -41,25 +42,59 @@ struct Item: Identifiable, Codable {
         self.updatedAt = updatedAt
     }
 
+    // MARK: - Codable
+
     enum CodingKeys: String, CodingKey {
-        case id, imageName, brand, category, name, price, date, createdAt, updatedAt
+        case id, imageName, brand, categoryID, name, price, date, createdAt, updatedAt
+        case legacyCategoryName = "category"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,         forKey: .id)
+        try c.encode(imageName,  forKey: .imageName)
+        try c.encode(brand,      forKey: .brand)
+        try c.encode(categoryID, forKey: .categoryID)
+        try c.encode(name,       forKey: .name)
+        try c.encode(price,      forKey: .price)
+        try c.encodeIfPresent(date, forKey: .date)
+        try c.encode(createdAt,  forKey: .createdAt)
+        try c.encode(updatedAt,  forKey: .updatedAt)
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id        = try c.decode(UUID.self, forKey: .id)
+
+        id        = try c.decode(UUID.self,   forKey: .id)
         imageName = try c.decode(String.self, forKey: .imageName)
         brand     = try c.decode(String.self, forKey: .brand)
-        category  = try c.decode(String.self, forKey: .category)
         name      = try c.decode(String.self, forKey: .name)
         price     = try c.decode(String.self, forKey: .price)
         date      = try c.decodeIfPresent(Date.self, forKey: .date)
 
         let decodedUpdated = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
         updatedAt = decodedUpdated
-
-        // ✅ 舊檔相容：沒 createdAt 時，用 updatedAt（若也沒有就用 date / distantPast）
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
             ?? (decodedUpdated != .distantPast ? decodedUpdated : (date ?? .distantPast))
+
+        if let cid = try c.decodeIfPresent(UUID.self, forKey: .categoryID) {
+            // 新格式：直接讀 UUID
+            categoryID = cid
+        } else {
+            // 舊格式遷移：暫用 nilUUID 佔位，migration 時會覆寫
+            categoryID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+            // ✅ 用 NameMapRef（純 Swift class）取代 NSMutableDictionary，避免 Sendable 警告
+            if let ref = decoder.userInfo[ItemMigrationKey.categoryNameKey] as? NameMapRef {
+                let oldName = try c.decodeIfPresent(String.self, forKey: .legacyCategoryName) ?? ""
+                ref.storage[id.uuidString] = oldName
+            }
+        }
     }
+}
+
+// MARK: - Migration Helper
+
+enum ItemMigrationKey {
+    static let categoryNameKey = CodingUserInfoKey(rawValue: "pendingCategoryNames")!
 }

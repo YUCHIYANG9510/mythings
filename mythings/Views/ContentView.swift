@@ -2,8 +2,6 @@
 //  ContentView.swift
 //  mythings
 //
-//  Created by Designer on 2025/4/23.
-//
 
 import SwiftUI
 import PhotosUI
@@ -28,17 +26,12 @@ enum PageMode {
 }
 
 extension View {
-
     @ViewBuilder
     func onChangeCompat<V: Equatable>(of value: V, perform action: @escaping () -> Void) -> some View {
         if #available(iOS 17, *) {
-            self.onChange(of: value) {
-                action()       // 新：零參數 closure 版本
-            }
+            self.onChange(of: value) { action() }
         } else {
-            self.onChange(of: value, perform: { _ in
-                action()       // 舊：一參數（newValue）版本
-            })
+            self.onChange(of: value, perform: { _ in action() })
         }
     }
 }
@@ -60,7 +53,8 @@ struct PendingPhoto: Identifiable {
 }
 
 struct ContentView: View {
-    @State private var selectedCategory = "All"
+    // ✅ selectedCategory 改為存 UUID?（nil = "All"）
+    @State private var selectedCategoryID: UUID? = nil
     @State private var showImagePicker = false
     @State private var showCamera = false
     @State private var showActionSheet = false
@@ -84,20 +78,16 @@ struct ContentView: View {
     @State private var pageMode: PageMode = .default
     @State private var editingImageForSheet: UIImage? = nil
 
-    // MARK: - 新增：排序狀態
     @State private var sortKey: SortKey = .none
     @State private var sortOrder: SortOrder = .descending
 
     @State private var pendingPhoto: PendingPhoto?
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
 
-    // 🔑 RevenueCat（用於功能 gating）
     @EnvironmentObject private var pm: PurchasesManager
     @State private var showPaywall = false
 
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
-
-    // ✅ 永久化儲存
     @AppStorage("sort.key")   private var storedSortKey: String   = SortKey.none.rawValue
     @AppStorage("sort.order") private var storedSortOrder: String = SortOrder.descending.rawValue
 
@@ -106,14 +96,28 @@ struct ContentView: View {
     }
     private let selectionHaptic = UISelectionFeedbackGenerator()
 
+    // ✅ category 頁面清單：用 (id: UUID?, name: String) tuple
+    // id == nil 代表 "All"
+    private var categoryPages: [(id: UUID?, name: String)] {
+        var pages: [(id: UUID?, name: String)] = [(nil, "All")]
+        pages += categoryStore.categories.map { (Optional($0.id), $0.name) }
+        return pages
+    }
+
+    // 向下相容：給 CategoryScrollView / CategoryPager 用的純字串陣列
     var categoryNames: [String] {
-        var names = ["All"]; names.append(contentsOf: categoryStore.categories.map { $0.name }); return names
+        categoryPages.map { $0.name }
+    }
+
+    // 目前選中分類的顯示名稱（給 CategoryScrollView binding 用）
+    private var selectedCategoryName: String {
+        guard let id = selectedCategoryID else { return "All" }
+        return categoryStore.name(for: id)
     }
 
     // MARK: - 排序後的顯示清單
     private var displayedItems: [Item] {
         if sortKey == .none {
-            // ✅ 預設：永遠新到舊（不吃陣列順序）
             return items.sorted { $0.createdAt > $1.createdAt }
         } else {
             return sort(items, by: sortKey, order: sortOrder)
@@ -133,21 +137,31 @@ struct ContentView: View {
                             sortOrder: $sortOrder,
                             navigateToSettings: { path.append(.settings) }
                         )
+
+                        // ✅ CategoryScrollView 仍接受字串，binding 橋接
                         CategoryScrollView(
                             categoryNames: categoryNames,
-                            selectedCategory: $selectedCategory
+                            selectedCategory: Binding(
+                                get: { selectedCategoryName },
+                                set: { name in
+                                    selectedCategoryID = categoryPages.first(where: { $0.name == name })?.id ?? nil
+                                }
+                            )
                         )
+
+                        // ✅ CategoryPager 用 UUID? 做 filter
                         CategoryPager(
-                            categoryNames: categoryNames,
+                            categoryPages: categoryPages,
                             selectedPage: $selectedPage,
-                            selectedCategory: $selectedCategory,
+                            selectedCategoryID: $selectedCategoryID,
                             viewMode: viewMode,
                             allItems: displayedItems,
                             searchText: searchText,
                             selectedItem: $selectedItem,
                             editingItem: $editingItem,
                             items: $items,
-                            saveItems: saveItems
+                            saveItems: saveItems,
+                            categoryStore: categoryStore
                         )
                     } else {
                         CanvasBoardView(items: displayedItems,
@@ -155,7 +169,6 @@ struct ContentView: View {
                     }
                 }
 
-                // FloatingAddMenu
                 FloatingAddMenu(
                     isOpen: $showActionSheet,
                     showCamera: $showCamera,
@@ -183,22 +196,21 @@ struct ContentView: View {
                 }
             }
         }
-        
+
         .onReceive(iCloudSync.$syncStatus) { status in
-                if case .success = status {
-                    loadItemsFromLocal()
-                }
+            if case .success = status {
+                loadItemsFromLocal()
             }
-        
-        // ✅ FIX: 監聽 wipeLocalStore 通知，清空 UI
+        }
+
         .onReceive(NotificationCenter.default.publisher(for: .iCloudLocalStoreWiped)) { _ in
             items = []
         }
-        
-        // 初次載入
+
         .onAppear {
             loadItems()
-            if let idx = categoryNames.firstIndex(of: selectedCategory) {
+            // 恢復 selectedPage
+            if let idx = categoryPages.firstIndex(where: { $0.id == selectedCategoryID }) {
                 selectedPage = idx
             }
             sortKey   = SortKey(rawValue: storedSortKey) ?? .none
@@ -207,11 +219,9 @@ struct ContentView: View {
             selectionHaptic.prepare()
         }
 
-        // 🔁 寫回排序偏好
-        .onChange(of: sortKey) { _, newValue in storedSortKey = newValue.rawValue }
-        .onChange(of: sortOrder) { _, newValue in storedSortOrder = newValue.rawValue }
+        .onChange(of: sortKey)   { _, v in storedSortKey = v.rawValue }
+        .onChange(of: sortOrder) { _, v in storedSortOrder = v.rawValue }
 
-        // ✅ 在開啟相簿/相機前，先檢查是否超過免費上限；不符 → 關閉並彈付費牆
         .onChange(of: showImagePicker) { _, newValue in
             guard newValue == true else { return }
             if !pm.canAddItem(currentCount: items.count) {
@@ -227,10 +237,10 @@ struct ContentView: View {
             }
         }
 
-        // 各種 Sheet
+        // Manage Categories sheet（從 ContentView 層觸發的）
         .sheet(isPresented: $showManageCategories) {
             ManageCategoriesView(categoryStore: categoryStore)
-                .environmentObject(pm) // 若裡面要做分類 gating，可取用 pm
+                .environmentObject(pm)
         }
 
         .sheet(isPresented: $showImagePicker) {
@@ -259,7 +269,7 @@ struct ContentView: View {
             ) { updated in
                 if let idx = items.firstIndex(where: { $0.id == updated.id }) {
                     var new = updated
-                    new.updatedAt = Date()   // ⭐ 新增：只要有改就刷新時間
+                    new.updatedAt = Date()
                     items[idx] = new
                     saveItems()
                 }
@@ -271,7 +281,6 @@ struct ContentView: View {
             }
         }
 
-
         .sheet(item: $editingItem, onDismiss: { editingImageForSheet = nil }) { editing in
             AddItemView(
                 selectedImage: $editingImageForSheet,
@@ -282,7 +291,6 @@ struct ContentView: View {
             ) { newItem in
                 if let idx = items.firstIndex(where: { $0.id == editing.id }) {
                     var new = newItem
-                    // ✅ FIX: 確保 updatedAt 一定是「現在」，讓增量 push watermark 能篩到此筆
                     new.updatedAt = Date()
                     items[idx] = new
                 }
@@ -295,9 +303,6 @@ struct ContentView: View {
             }
         }
 
-
-
-
         .sheet(isPresented: $isAddingNewItem) {
             AddItemView(
                 selectedImage: $selectedImage,
@@ -308,9 +313,8 @@ struct ContentView: View {
             ) { newItem in
                 if pm.canAddItem(currentCount: items.count) {
                     var stamped = newItem
-                    stamped.updatedAt = Date()          // ⭐️補上
+                    stamped.updatedAt = Date()
                     items.insert(stamped, at: 0)
-
                     selectedImage = nil
                     isAddingNewItem = false
                     saveItems()
@@ -324,11 +328,8 @@ struct ContentView: View {
         .sheet(item: $pendingPhoto) { payload in
             EditPhotoView(
                 original: payload.image,
-                removeBG: { img in
-                    await removeBackground(from: img)
-                },
+                removeBG: { img in await removeBackground(from: img) },
                 onDone: { finalImage in
-                    // ✅ 第一道防線：完成剪圖時先檢查上限
                     if pm.canAddItem(currentCount: items.count) {
                         selectedImage = finalImage
                         DispatchQueue.main.async { isAddingNewItem = true }
@@ -337,36 +338,34 @@ struct ContentView: View {
                     }
                     pendingPhoto = nil
                 },
-                onCancel: {
-                    pendingPhoto = nil
-                }
+                onCancel: { pendingPhoto = nil }
             )
             .presentationDetents([.large])
             .presentationCornerRadius(24)
         }
 
-        // 付費牆
         .sheet(isPresented: $showPaywall) {
-            PaywallView()
-                .environmentObject(pm)
+            PaywallView().environmentObject(pm)
         }
 
-        // 分頁切換
+        // ✅ 頁面切換：用 categoryPages index
         .onChange(of: selectedPage) { _, newValue in
-            if categoryNames.indices.contains(newValue) {
+            if categoryPages.indices.contains(newValue) {
                 HapticsManager.shared.pageSnap(strength: lastSwipeStrength)
-                let cat = categoryNames[newValue]
-                if cat != selectedCategory { selectedCategory = cat }
+                let page = categoryPages[newValue]
+                if page.id != selectedCategoryID { selectedCategoryID = page.id }
             }
             HapticsManager.shared.prepare()
             selectionHaptic.prepare()
         }
-        .onChange(of: selectedCategory) { _, newValue in
-            if let idx = categoryNames.firstIndex(of: newValue), idx != selectedPage {
+        .onChange(of: selectedCategoryID) { _, newValue in
+            if let idx = categoryPages.firstIndex(where: { $0.id == newValue }), idx != selectedPage {
                 selectedPage = idx
             }
         }
     }
+
+    // MARK: - Persistence
 
     private func saveItems() {
         do {
@@ -381,29 +380,25 @@ struct ContentView: View {
     }
 
     private func loadItems() {
-        // 立即離線可用
         loadItemsFromLocal()
-
+        // ✅ 舊資料遷移：在 MainActor 上取得 categories 快照後執行
+        let categoriesSnapshot = categoryStore.categories
+        migrateItemsIfNeeded(using: categoriesSnapshot)
         if iCloudSync.isEnabled {
             iCloudSync.schedule(.full)
-            // 可選：監聽狀態回到 success 時再 loadItemsFromLocal()
-            // .onReceive 或用 .onChange 監控 iCloudSync.syncStatus
-            
         }
-        
     }
-    
+
     private func loadItemsFromLocal() {
         do {
             let data = try Data(contentsOf: savePath)
             var decoded = try JSONDecoder().decode([Item].self, from: data)
-            // 規一化價格
             decoded = decoded.map { item in
                 Item(
                     id: item.id,
                     imageName: item.imageName,
                     brand: item.brand,
-                    category: item.category,
+                    categoryID: item.categoryID,
                     name: item.name,
                     price: normalizedPriceString(item.price),
                     date: item.date,
@@ -416,7 +411,41 @@ struct ContentView: View {
             print("讀取失敗或尚無資料：\(error)")
         }
     }
+
+    /// 舊格式遷移：若 item 的 categoryID 為 nilUUID，用 category 名稱對照傳入的 categories 快照取回 UUID
+    /// categories 快照在呼叫前於 MainActor context 取得，避免 actor isolation 錯誤
+    private func migrateItemsIfNeeded(using categories: [Category]) {
+        let nilUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        guard items.contains(where: { $0.categoryID == nilUUID }) else { return }
+
+        guard let data = try? Data(contentsOf: savePath) else { return }
+
+        // ✅ NameMapRef（純 Swift class）取代 NSMutableDictionary，避免 Sendable 警告
+        let nameMapRef = NameMapRef()
+        let decoder = JSONDecoder()
+        decoder.userInfo[ItemMigrationKey.categoryNameKey] = nameMapRef
+
+        guard var rawItems = try? decoder.decode([Item].self, from: data) else { return }
+
+        var nameToID: [String: UUID] = [:]
+        for cat in categories {
+            nameToID[cat.name] = cat.id
+        }
+
+        for i in rawItems.indices {
+            if rawItems[i].categoryID == nilUUID {
+                let oldName = nameMapRef.storage[rawItems[i].id.uuidString] ?? ""
+                rawItems[i].categoryID = nameToID[oldName] ?? nilUUID
+            }
+        }
+
+        items = rawItems
+        saveItems()
+        print("✅ Migration complete: \(rawItems.count) items migrated")
+    }
 }
+
+// MARK: - Background Removal
 
 @MainActor
 func removeBackground(from image: UIImage) async -> UIImage? {
@@ -444,7 +473,8 @@ func removeBackground(from image: UIImage) async -> UIImage? {
     }
 }
 
-// MARK: - 排序工具
+// MARK: - Sort
+
 private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] {
     var sorted = items.sorted { a, b in
         switch key {
@@ -453,9 +483,7 @@ private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] 
             let db = b.date ?? .distantPast
             return da < db
         case .price:
-            let pa = priceValue(a.price)
-            let pb = priceValue(b.price)
-            return pa < pb
+            return priceValue(a.price) < priceValue(b.price)
         case .name:
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         case .none:
@@ -466,7 +494,6 @@ private func sort(_ items: [Item], by key: SortKey, order: SortOrder) -> [Item] 
     return sorted
 }
 
-/// 將字串價格轉成 Double 用於排序
 private func priceValue(_ s: String) -> Double {
     let cleaned = s
         .replacingOccurrences(of: ",", with: "")
@@ -487,7 +514,6 @@ struct ListItemImageView: View {
     var body: some View {
         ZStack {
             Color(.systemGray6)
-
             if let image {
                 Image(uiImage: image)
                     .resizable()
@@ -514,7 +540,6 @@ struct ListItemImageView: View {
             self.isLoading = false
             return
         }
-
         isLoading = true
         ImageMemoryCache.shared.loadImage(named: fileName) { img in
             self.image = img
@@ -530,7 +555,6 @@ struct EmptyStateView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 120, height: 120)
-
             Text("It's empty here...").foregroundColor(.gray).font(.subheadline)
         }
         .padding(.top, 180)
@@ -577,13 +601,10 @@ struct ItemImageView: View {
 
 struct CanvasTabToggle: View {
     @Binding var selected: PageMode
-    
-    // 預先初始化 feedback generator，避免每次點擊時重新創建
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
-    
+
     init(selected: Binding<PageMode>) {
         self._selected = selected
-        // 預先準備 feedback generator
         feedbackGenerator.prepare()
     }
 
@@ -596,7 +617,6 @@ struct CanvasTabToggle: View {
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(isOn ? .white : .primary)
             )
-            // 簡化陰影效果
             .shadow(color: .black.opacity(0.10), radius: 8, x: 0, y: 4)
     }
 
@@ -615,43 +635,25 @@ struct CanvasTabToggle: View {
     var body: some View {
         HStack(spacing: 6) {
             Button {
-                // 使用預先初始化的 generator
                 feedbackGenerator.impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                    selected = .default
-                }
-            } label: {
-                circle(isOn: selected == .default)
-            }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { selected = .default }
+            } label: { circle(isOn: selected == .default) }
             .accessibilityLabel("Default View")
 
             Button {
                 feedbackGenerator.impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                    selected = .canvas
-                }
-            } label: {
-                eyes(isOn: selected == .canvas)
-            }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { selected = .canvas }
+            } label: { eyes(isOn: selected == .canvas) }
             .accessibilityLabel("Canvas View")
         }
         .padding(6)
         .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(
-                    // 簡化 gradient，減少計算複雜度
-                    .white.opacity(0.3),
-                    lineWidth: 1
-                )
-        )
-        // 減少陰影層數
+        .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 1))
         .shadow(color: .black.opacity(0.15), radius: 16, x: 0, y: 8)
     }
 }
 
 #Preview {
-    // 預覽時注入必要的 EnvironmentObject，避免崩潰
     let previewSync = iCloudSyncManager()
     return ContentView(categoryStore: CategoryStore())
         .environmentObject(previewSync)

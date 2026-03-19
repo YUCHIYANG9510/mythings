@@ -2,74 +2,84 @@
 //  CategoryPager.swift
 //  mythings
 //
-//  Created by Designer on 2025/8/15.
-//
 
 import SwiftUI
 
 struct CategoryPager: View {
-    let categoryNames: [String]
+    let categoryPages: [(id: UUID?, name: String)]
     @Binding var selectedPage: Int
-    @Binding var selectedCategory: String
+    @Binding var selectedCategoryID: UUID?
     let viewMode: ViewMode
     let allItems: [Item]
     let searchText: String
-    
+
     @Binding var selectedItem: Item?
     @Binding var editingItem: Item?
     @Binding var items: [Item]
     let saveItems: () -> Void
-    
-    private func itemsFor(category: String) -> [Item] {
-        let base = (category == "All") ? allItems : allItems.filter { $0.category == category }
+    let categoryStore: CategoryStore
+
+    private func itemsFor(categoryID: UUID?) -> [Item] {
+        let base: [Item]
+        if let id = categoryID {
+            base = allItems.filter { $0.categoryID == id }
+        } else {
+            base = allItems
+        }
         guard !searchText.isEmpty else { return base }
         return base.filter {
             $0.name.localizedCaseInsensitiveContains(searchText) ||
             $0.brand.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
     var body: some View {
         TabView(selection: $selectedPage) {
-            ForEach(Array(categoryNames.enumerated()), id: \.offset) { index, category in
-                Group {
-                    if viewMode == .grid {
-                        ItemsGridView(
-                            filteredItems: itemsFor(category: category),
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems,
-                            isScrollDisabled: false
-                        )
-                    } else {
-                        ItemsListView(
-                            filteredItems: itemsFor(category: category),
-                            selectedItem: $selectedItem,
-                            editingItem: $editingItem,
-                            items: $items,
-                            saveItems: saveItems,
-                            isScrollDisabled: false
-                        )
-                    }
-                }
-                .tag(index)
-                .contentShape(Rectangle())
+            ForEach(Array(categoryPages.enumerated()), id: \.offset) { index, page in
+                pageView(for: page)
+                    .tag(index)
+                    .contentShape(Rectangle())
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .onChange(of: selectedPage) { _, newValue in
-            if categoryNames.indices.contains(newValue) {
-                let cat = categoryNames[newValue]
-                if cat != selectedCategory { selectedCategory = cat }
+            if categoryPages.indices.contains(newValue) {
+                let page = categoryPages[newValue]
+                if page.id != selectedCategoryID { selectedCategoryID = page.id }
             }
         }
-        .onChange(of: selectedCategory) { _, newValue in
-            if let idx = categoryNames.firstIndex(of: newValue), idx != selectedPage {
+        .onChange(of: selectedCategoryID) { _, newValue in
+            if let idx = categoryPages.firstIndex(where: { $0.id == newValue }), idx != selectedPage {
                 selectedPage = idx
             }
         }
         .background(TabViewScrollConfigurator())
+    }
+
+    // ✅ 拆出獨立 @ViewBuilder 讓編譯器能快速推斷型別
+    @ViewBuilder
+    private func pageView(for page: (id: UUID?, name: String)) -> some View {
+        if viewMode == .grid {
+            ItemsGridView(
+                filteredItems: itemsFor(categoryID: page.id),
+                categoryStore: categoryStore,   // ✅ 補上
+                selectedItem: $selectedItem,
+                editingItem: $editingItem,
+                items: $items,
+                saveItems: saveItems,
+                isScrollDisabled: false
+            )
+        } else {
+            ItemsListView(
+                filteredItems: itemsFor(categoryID: page.id),
+                categoryStore: categoryStore,   // ✅ 補上
+                selectedItem: $selectedItem,
+                editingItem: $editingItem,
+                items: $items,
+                saveItems: saveItems,
+                isScrollDisabled: false
+            )
+        }
     }
 }
 

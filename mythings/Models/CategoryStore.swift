@@ -5,10 +5,11 @@
 //  Created by Designer on 2025/4/29.
 //
 
+
+
 import Foundation
 import SwiftUI
 
-// ▶︎ 讓整個 Store 掛主執行緒，與 UI/Sync Manager 一致
 @MainActor
 class CategoryStore: ObservableObject {
     @Published var categories: [Category] = [] {
@@ -19,15 +20,12 @@ class CategoryStore: ObservableObject {
         FileManager.documentsDirectory.appendingPathComponent("categories.json")
     }
 
-    // ✅ 依賴注入：共用同一個 iCloudSyncManager（不要在這裡 new）
     private let iCloudSync: iCloudSyncManager
 
-    // ✅ 由外部傳入 iCloudSync（例如在 App/Settings 建立後注入）
     init(iCloudSync: iCloudSyncManager) {
         self.iCloudSync = iCloudSync
         loadCategories()
 
-        // 預設分類（僅在無資料，且目前未啟用 iCloud 時）
         if categories.isEmpty && !iCloudSync.isEnabled {
             categories = [
                 Category(name: "3C Device", emoji: "🎧"),
@@ -41,25 +39,38 @@ class CategoryStore: ObservableObject {
         }
     }
 
-    // 如果你在其他地方用到無參數 init()，保留一個便利建構子：
     convenience init() {
         self.init(iCloudSync: iCloudSyncManager())
     }
 
-    // ✅ 新介面：直接用 emoji
+    // MARK: - Lookup Helpers
+
+    /// UUID → Category name（用於顯示）
+    func name(for id: UUID) -> String {
+        categories.first(where: { $0.id == id })?.name ?? "Unknown"
+    }
+
+    /// Category name → UUID（用於建立新 Item 時）
+    func id(for name: String) -> UUID? {
+        categories.first(where: { $0.name == name })?.id
+    }
+
+    /// UUID → Category（完整物件）
+    func category(for id: UUID) -> Category? {
+        categories.first(where: { $0.id == id })
+    }
+
+    // MARK: - CRUD
+
     func addCategory(name: String, emoji: String) {
         let newCategory = Category(name: name, emoji: emoji)
         categories.append(newCategory)
     }
 
     func deleteCategory(at indexSet: IndexSet) {
-        // ⭐️ 先記錄要刪除的 ID
         let idsToDelete = indexSet.map { categories[$0].id }
-        
         categories.remove(atOffsets: indexSet)
-        // saveCategories() 已在 didSet 中自動呼叫，會觸發 categoriesChanged
-        
-        // ⭐️ 額外排程刪除事件（寫墓碑）
+
         if iCloudSync.isEnabled {
             for id in idsToDelete {
                 iCloudSync.schedule(.deleteCategory(id))
@@ -73,9 +84,13 @@ class CategoryStore: ObservableObject {
 
     func updateCategory(category: Category) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
+            // ✅ 只更新 Category 本身即可
+            // Item 存的是 categoryID（UUID），不受 name 變動影響
             categories[index] = category
         }
     }
+
+    // MARK: - Persistence
 
     func saveCategories() {
         do {
@@ -94,42 +109,35 @@ class CategoryStore: ObservableObject {
         do {
             let data = try Data(contentsOf: savePath)
 
-            // 先嘗試新格式（含 emoji）
             if let decoded = try? JSONDecoder().decode([Category].self, from: data) {
                 self.categories = decoded
                 return
             }
 
-            // 相容舊的簡化格式（只有 id/name，沒有 emoji）
             struct SimpleCategoryCompat: Identifiable, Codable {
                 var id: UUID
                 var name: String
             }
             if let simple = try? JSONDecoder().decode([SimpleCategoryCompat].self, from: data) {
                 self.categories = simple.map { sc in
-                    // 依名稱推測合適 emoji，若無命中則給通用符號
                     let emoji = defaultEmoji(for: sc.name, legacyColor: "")
                     return Category(id: sc.id, name: sc.name, emoji: emoji)
                 }
                 return
             }
 
-            // 向下相容：舊格式（含 color）
             struct LegacyCategory: Identifiable, Codable {
                 var id = UUID()
                 var name: String
                 var color: String
             }
-
             if let legacy = try? JSONDecoder().decode([LegacyCategory].self, from: data) {
-                // 轉成新格式；沒有 emoji 的舊資料給一個合理預設
                 self.categories = legacy.map { old in
                     Category(name: old.name, emoji: defaultEmoji(for: old.name, legacyColor: old.color))
                 }
                 return
             }
 
-            // 若兩者皆失敗，保持空陣列
             self.categories = []
         } catch {
             print("Failed to load categories or no data yet: \(error)")
@@ -139,7 +147,6 @@ class CategoryStore: ObservableObject {
 
 // MARK: - Helpers
 
-/// 依舊資料名稱/顏色給一個合適的預設 emoji（僅用於舊資料轉換）
 private func defaultEmoji(for name: String, legacyColor: String) -> String {
     let lower = name.lowercased()
     if lower.contains("3c") || lower.contains("device") || lower.contains("gadget") { return "🎧" }
@@ -149,7 +156,6 @@ private func defaultEmoji(for name: String, legacyColor: String) -> String {
     if lower.contains("shoe") { return "👟" }
     if lower.contains("bag") { return "🎒" }
 
-    // fallback：用顏色大致對應幾個常見類型，或給通用標誌
     switch legacyColor.lowercased() {
     case "blue":   return "📘"
     case "green":  return "🟢"

@@ -2,30 +2,28 @@
 //  ListItemCell.swift
 //  mythings
 //
-//  Created by Designer on 2025/8/15.
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ListItemCell: View {
     let item: Item
+    let categoryStore: CategoryStore          // ✅ 新增：用來查 category 名稱
     @Binding var selectedItem: Item?
     @Binding var editingItem: Item?
     @Binding var items: [Item]
     let saveItems: () -> Void
 
-    // ⭐️ 新增：注入 iCloud 同步管理器，刪除時要排程雲端刪除
     @EnvironmentObject private var iCloudSync: iCloudSyncManager
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // 縮圖：統一用 Images 資料夾 + 記憶體快取
             ListItemImageView(imageName: item.imageName)
                 .frame(width: 80, height: 80)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(item.brand) · \(item.category)")
+                // ✅ 改用 categoryStore.name(for:) 取得分類名稱
+                Text("\(item.brand) · \(categoryStore.name(for: item.categoryID))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -51,23 +49,19 @@ struct ListItemCell: View {
         .contextMenu {
             Button("Edit") { editingItem = item }
             Button("Delete", role: .destructive) {
-                // 先移除本機資料並落盤
                 items.removeAll { $0.id == item.id }
                 saveItems()
 
-                // 清縮圖快取，避免殘影
                 if !item.imageName.isEmpty {
                     ImageCacheManager.shared.invalidateCache(for: item.imageName)
                 }
 
-                // ⭐️ 關鍵：排程雲端刪除，避免同步時被拉回
                 if iCloudSync.isEnabled {
                     iCloudSync.schedule(.deleteItem(item.id))
-                    iCloudSync.kickoffIfNeeded()   // ⭐️ 新增這行
+                    iCloudSync.kickoffIfNeeded()
                 }
             }
         }
-        // 拖曳排序
         .onDrag {
             ItemDragStore.shared.draggingID = item.id
             return NSItemProvider(object: item.id.uuidString as NSString)
