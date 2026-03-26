@@ -499,11 +499,18 @@ private extension AddItemView {
             } catch { showValidationAlert = true; return }
         }
 
+        // ✅ Bug 1 fix：避免 force unwrap crash
+        // isFormValid() 確保 categoryID != nil，但 categories 可能是空陣列
+        guard let resolvedCategoryID = categoryID ?? categoryStore.categories.first?.id else {
+            showValidationAlert = true
+            return
+        }
+
         let item = Item(
             id: itemId,
             imageName: finalImageName,
             brand: brand,
-            categoryID: categoryID ?? categoryStore.categories.first!.id,
+            categoryID: resolvedCategoryID,
             name: name,
             price: priceWithDollar(price),
             date: useDate ? selectedDate : existingItem?.date,

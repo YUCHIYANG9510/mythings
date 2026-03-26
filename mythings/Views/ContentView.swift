@@ -200,6 +200,10 @@ struct ContentView: View {
         .onReceive(iCloudSync.$syncStatus) { status in
             if case .success = status {
                 loadItemsFromLocal()
+                // ✅ Bug 2 fix：iCloud sync 成功後也需要跑 migration
+                // 否則從其他裝置 pull 回來的舊格式 item 會顯示 "Unknown" category
+                let snapshot = categoryStore.categories
+                migrateItemsIfNeeded(using: snapshot)
             }
         }
 
@@ -361,6 +365,17 @@ struct ContentView: View {
         .onChange(of: selectedCategoryID) { _, newValue in
             if let idx = categoryPages.firstIndex(where: { $0.id == newValue }), idx != selectedPage {
                 selectedPage = idx
+            }
+        }
+        // ✅ Bug 3 fix：監聽 categories 變化，若目前選中的 category 被刪除，重置回 All
+        // 避免 selectedCategoryID 成為 dangling reference，造成 TabView 顯示空白或錯頁
+        .onChange(of: categoryStore.categories) { _, newCategories in
+            if let id = selectedCategoryID {
+                let stillExists = newCategories.contains(where: { $0.id == id })
+                if !stillExists {
+                    selectedCategoryID = nil  // 回到 All
+                    selectedPage = 0
+                }
             }
         }
     }
