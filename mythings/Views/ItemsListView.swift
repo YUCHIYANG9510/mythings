@@ -29,6 +29,13 @@ struct ItemsListView: View {
                             items: $items,
                             saveItems: saveItems
                         )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteItem(item)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -36,5 +43,32 @@ struct ItemsListView: View {
         }
         .scrollDisabled(isScrollDisabled)
         .padding(.top, 16)
+    }
+    
+    // MARK: - Delete Item
+    
+    @EnvironmentObject private var iCloudSync: iCloudSyncManager
+    
+    private func deleteItem(_ item: Item) {
+        // 1. Delete physical image file from disk
+        if !item.imageName.isEmpty {
+            let imageURL = FileManager.imagesDirectory
+                .appendingPathComponent((item.imageName as NSString).lastPathComponent)
+            try? FileManager.default.removeItem(at: imageURL)
+            
+            // 2. Invalidate memory cache
+            ImageCacheManager.shared.invalidateCache(for: item.imageName)
+        }
+        
+        // 3. Remove from items array
+        items.removeAll { $0.id == item.id }
+        
+        // 4. Save to local storage
+        saveItems()
+        
+        // 5. Sync deletion to iCloud
+        if iCloudSync.isEnabled {
+            iCloudSync.schedule(.deleteItem(item.id))
+        }
     }
 }

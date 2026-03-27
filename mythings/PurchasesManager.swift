@@ -14,6 +14,11 @@ import UIKit
 // 不要在類別層級加 @MainActor，避免與 PurchasesDelegate 衝突（Swift 6 更嚴格）
 final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
+    // ⚠️ TESTING FLAG - Remove before release!
+    #if DEBUG
+    private let forceProForTesting = true  // Set to false to disable test mode
+    #endif
+
     // === 你的 RC entitlement 名稱 ===
     private let entitlementID = "Premium"
 
@@ -181,6 +186,16 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
     @MainActor
     private func applyCustomerInfo(_ info: CustomerInfo?) {
         latestCustomerInfo = info
+        
+        #if DEBUG
+        // ⚠️ TESTING MODE: Force isPro = true for multi-device testing
+        if forceProForTesting {
+            isPro = true
+            print("[PM] 🧪 TESTING MODE: isPro forced to true (forceProForTesting = \(forceProForTesting))")
+            return
+        }
+        #endif
+        
         isPro = info?.entitlements[entitlementID]?.isActive == true
         #if DEBUG
         if let info {

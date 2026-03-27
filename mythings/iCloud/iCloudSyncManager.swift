@@ -182,6 +182,30 @@ struct ImageStore {
         try fm.copyItem(at: source, to: dst)
         return CKAsset(fileURL: dst)
     }
+    
+    // MARK: - Cleanup
+    
+    /// Clean up temporary upload files older than 24 hours
+    func cleanupTempUploads() {
+        let tmpBase = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("Upload", isDirectory: true)
+        guard fm.fileExists(atPath: tmpBase.path) else { return }
+        
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60) // 24 hours ago
+        guard let files = try? fm.contentsOfDirectory(
+            at: tmpBase,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: .skipsHiddenFiles
+        ) else { return }
+        
+        for file in files {
+            if let attrs = try? fm.attributesOfItem(atPath: file.path),
+               let created = attrs[.creationDate] as? Date,
+               created < cutoff {
+                try? fm.removeItem(at: file)
+            }
+        }
+    }
 }
 
 // MARK: - CloudKitSyncManager
@@ -202,6 +226,9 @@ final class iCloudSyncManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let fm = FileManager.default
     private let imageStore = ImageStore()
+    
+    // Notification observers for cleanup
+    private var notificationObservers: [NSObjectProtocol] = []
 
     private var documentsDir: URL { imageStore.documentsDir }
     private var localItemsURL: URL { documentsDir.appendingPathComponent("items.json") }
@@ -246,19 +273,37 @@ final class iCloudSyncManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             await MainActor.run { [weak self] in self?.kickoffIfNeeded() }
         }
-        NotificationCenter.default.addObserver(
+        
+        // Store observers for cleanup
+        let foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in guard let self, self.isEnabled else { return }; self.kickoffIfNeeded() }
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(foregroundObserver)
+        
+        let accountObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name.CKAccountChanged, object: nil, queue: .main
         ) { [weak self] _ in guard let self, self.isEnabled else { return }; self.kickoffIfNeeded() }
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(accountObserver)
+        
+        let remoteObserver = NotificationCenter.default.addObserver(
             forName: .iCloudRemoteNotificationReceived, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self, self.isEnabled else { return }
             print("📲 iCloudSyncManager received remote notification, starting sync")
             self.schedule(.full)
         }
+        notificationObservers.append(remoteObserver)
+        
+        // Clean up old temp files on init
+        imageStore.cleanupTempUploads()
+    }
+    
+    deinit {
+        // Clean up notification observers
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers.removeAll()
     }
 
     func schedule(_ event: SyncEvent) {
@@ -382,7 +427,17 @@ final class iCloudSyncManager: ObservableObject {
         }
     }
 
-    private func disableCloudSync() { cancellables.removeAll(); syncStatus = .idle }
+    private func disableCloudSync() { 
+        cancellables.removeAll()
+        
+        // Clean up notification observers
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers.removeAll()
+        
+        syncStatus = .idle
+    }
 
     // MARK: - Local IO
     private func loadLocalItems() -> [Item] {
@@ -393,8 +448,11 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func saveLocalItems(_ items: [Item]) {
-        do { let data = try JSONEncoder().encode(items); try data.write(to: localItemsURL, options: .atomic) }
-        catch { print("Save items.json failed: \(error)") }
+        do {
+            try saveAtomically(items, to: localItemsURL)
+        } catch {
+            print("❌ Save items.json failed: \(error)")
+        }
     }
 
     private func loadLocalCategories() -> [Category] {
@@ -405,8 +463,35 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func saveLocalCategories(_ cats: [Category]) {
-        do { let data = try JSONEncoder().encode(cats); try data.write(to: localCategoriesURL, options: .atomic) }
-        catch { print("Save categories.json failed: \(error)") }
+        do {
+            try saveAtomically(cats, to: localCategoriesURL)
+        } catch {
+            print("❌ Save categories.json failed: \(error)")
+        }
+    }
+    
+    // MARK: - Atomic File Operations
+    
+    /// Atomically save data with backup, preventing data loss if write fails
+    private func saveAtomically<T: Encodable>(_ value: T, to url: URL) throws {
+        let tempURL = url.appendingPathExtension("tmp")
+        let backupURL = url.appendingPathExtension("bak")
+        
+        // Encode and write to temp file
+        let data = try JSONEncoder().encode(value)
+        try data.write(to: tempURL, options: .atomic)
+        
+        // If original exists, move it to backup
+        if fm.fileExists(atPath: url.path) {
+            try? fm.removeItem(at: backupURL)
+            try? fm.moveItem(at: url, to: backupURL)
+        }
+        
+        // Move temp to final location
+        try fm.moveItem(at: tempURL, to: url)
+        
+        // Clean up backup on success
+        try? fm.removeItem(at: backupURL)
     }
 
     // MARK: - Category 名稱 ↔ UUID 對照
@@ -416,7 +501,28 @@ final class iCloudSyncManager: ObservableObject {
 
     private func categoryNameToIDMap() -> [String: UUID] {
         var map: [String: UUID] = [:]
-        for cat in loadLocalCategories() { map[cat.name] = cat.id }
+        let categories = loadLocalCategories()
+        
+        for cat in categories {
+            let key = normalizeCategoryKey(cat.name)
+            if let existingID = map[key] {
+                print("⚠️ Duplicate category name detected: '\(cat.name)' (normalized: '\(key)')")
+                print("   Existing ID: \(existingID), New ID: \(cat.id)")
+                // Keep the first one found, but log the conflict
+            } else {
+                map[key] = cat.id
+            }
+        }
+        
+        if !map.isEmpty {
+            print("📂 Category name→ID map built with \(map.count) categories:")
+            for (name, id) in map.sorted(by: { $0.key < $1.key }) {
+                print("   '\(name)' → \(id)")
+            }
+        } else {
+            print("⚠️ Category name→ID map is EMPTY! Items will get nil UUID.")
+        }
+        
         return map
     }
 
@@ -434,7 +540,8 @@ final class iCloudSyncManager: ObservableObject {
     /// 名稱字串 → categoryID（從 CloudKit pull 回來時用）
     /// 若找不到對應，用 nilUUID 佔位，App 啟動時的 migration 會補上
     private func categoryID(for name: String) -> UUID {
-        categoryNameToIDMap()[name] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        let key = normalizeCategoryKey(name)
+        return categoryNameToIDMap()[key] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
     }
 
     // MARK: - 混合同步策略
@@ -467,14 +574,18 @@ final class iCloudSyncManager: ObservableObject {
     private func pushLocalChanges() async throws {
         let items = loadLocalItems()
         let categories = loadLocalCategories()
-        let watermark = lastItemSyncDate.addingTimeInterval(-clockSkewLeeway)
-        let recentItems = items.filter { $0.updatedAt > watermark }
-        if !recentItems.isEmpty { try await pushItemsWithRetry(recentItems) }
+        
+        // ✅ Push categories first to ensure they exist before items reference them
         let timeSinceCatSync = Date().timeIntervalSince(lastCategorySyncDate)
         let catWatermark = lastCategorySyncDate.addingTimeInterval(-clockSkewLeeway)
         if timeSinceCatSync > clockSkewLeeway || catWatermark == .distantPast.addingTimeInterval(-clockSkewLeeway) {
             if !categories.isEmpty { try await pushCategoriesWithRetry(categories) }
         }
+        
+        // Then push items
+        let watermark = lastItemSyncDate.addingTimeInterval(-clockSkewLeeway)
+        let recentItems = items.filter { $0.updatedAt > watermark }
+        if !recentItems.isEmpty { try await pushItemsWithRetry(recentItems) }
     }
 
     private func pushCategoriesOnly() async throws {
@@ -484,8 +595,10 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func pullRemoteChanges() async throws {
-        try await pullItemsSince(lastItemSyncDate)
+        // ✅ CRITICAL FIX: Pull categories BEFORE items
+        // This ensures categoryNameToIDMap() has all categories when processing items
         try await pullCategoriesSince(lastCategorySyncDate)
+        try await pullItemsSince(lastItemSyncDate)
     }
 
     private func pullItemsSince(_ since: Date) async throws {
@@ -541,8 +654,15 @@ final class iCloudSyncManager: ObservableObject {
             let cloudCreatedAt = record["createdAt"] as? Date
             if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }
 
-            // ✅ 名稱 → UUID
-            let resolvedCategoryID = nameToID[categoryName] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+            // ✅ 名稱 → UUID（使用 normalized key）
+            let normalizedKey = normalizeCategoryKey(categoryName)
+            let resolvedCategoryID = nameToID[normalizedKey] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+            
+            // ✅ Log when category is not found during incremental sync
+            if resolvedCategoryID == UUID(uuidString: "00000000-0000-0000-0000-000000000000")! {
+                print("⚠️ [Incremental Sync] Category '\(categoryName)' (normalized: '\(normalizedKey)') not found in local categories for item '\(name)'")
+                print("   Item will show as 'Unknown' until categories are synced")
+            }
 
             var finalImageName = ""
             if let asset = record["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -639,10 +759,13 @@ final class iCloudSyncManager: ObservableObject {
         try await pullAllDeletedCategories()
         let items = loadLocalItems()
         let cats = loadLocalCategories()
-        if !items.isEmpty { try Task.checkCancellation(); try await pushItemsWithRetry(items) }
+        // ✅ Push categories before items (order doesn't matter as much for push)
         if !cats.isEmpty { try Task.checkCancellation(); try await pushCategoriesWithRetry(cats) }
-        try Task.checkCancellation(); try await pullItems()
+        if !items.isEmpty { try Task.checkCancellation(); try await pushItemsWithRetry(items) }
+        // ✅ CRITICAL FIX: Pull categories BEFORE items
+        // This ensures categoryNameToIDMap() has all categories when processing items
         try Task.checkCancellation(); try await pullCategories()
+        try Task.checkCancellation(); try await pullItems()
     }
 
     // MARK: - Push with retry
@@ -655,13 +778,19 @@ final class iCloudSyncManager: ObservableObject {
                     let ord = supportsOrderIndex ? index : 0
                     try await pushSingleItem(item, orderIndex: ord)
                     break
-                } catch let e as CKError where e.code == .serverRecordChanged && attempts < maxRetryAttempts - 1 {
+                } catch let e as CKError where isRetryableError(e) && attempts < maxRetryAttempts - 1 {
                     attempts += 1
-                    let delay = min(400_000_000 * UInt64(attempts), 2_000_000_000)
+                    let delay = calculateBackoffDelay(attempt: attempts)
+                    print("⚠️ Retrying push item (attempt \(attempts)/\(maxRetryAttempts)): \(e.localizedDescription)")
                     try await Task.sleep(nanoseconds: delay)
-                } catch { throw error }
+                } catch {
+                    throw error
+                }
             }
         }
+        
+        // Clean up temp files after batch upload
+        imageStore.cleanupTempUploads()
     }
 
     private func pushCategoriesWithRetry(_ categories: [Category]) async throws {
@@ -673,13 +802,46 @@ final class iCloudSyncManager: ObservableObject {
                     let ord = supportsOrderIndex ? index : 0
                     try await pushSingleCategory(cat, orderIndex: ord)
                     break
-                } catch let e as CKError where e.code == .serverRecordChanged && attempts < maxRetryAttempts - 1 {
+                } catch let e as CKError where isRetryableError(e) && attempts < maxRetryAttempts - 1 {
                     attempts += 1
-                    let delay = min(400_000_000 * UInt64(attempts), 2_000_000_000)
+                    let delay = calculateBackoffDelay(attempt: attempts)
+                    print("⚠️ Retrying push category (attempt \(attempts)/\(maxRetryAttempts)): \(e.localizedDescription)")
                     try await Task.sleep(nanoseconds: delay)
-                } catch { throw error }
+                } catch {
+                    throw error
+                }
             }
         }
+    }
+    
+    // MARK: - Error Handling Helpers
+    
+    /// Check if a CloudKit error is retryable
+    private func isRetryableError(_ error: CKError) -> Bool {
+        switch error.code {
+        case .serverRecordChanged,
+             .serviceUnavailable,
+             .requestRateLimited,
+             .zoneBusy,
+             .networkFailure,
+             .networkUnavailable:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    /// Calculate exponential backoff delay with jitter
+    private func calculateBackoffDelay(attempt: Int) -> UInt64 {
+        let baseDelay: UInt64 = 400_000_000 // 0.4 seconds
+        let exponentialDelay = baseDelay * UInt64(1 << attempt)
+        let maxDelay: UInt64 = 8_000_000_000 // 8 seconds
+        let cappedDelay = min(exponentialDelay, maxDelay)
+        
+        // Add jitter (±20%)
+        let jitterRange = Double(cappedDelay) * 0.2
+        let jitter = Double.random(in: -jitterRange...jitterRange)
+        return UInt64(max(0, Double(cappedDelay) + jitter))
     }
 
     // MARK: - Push one item
@@ -752,8 +914,15 @@ final class iCloudSyncManager: ObservableObject {
             let cloudCreatedAt = r["createdAt"] as? Date
             if cloudUpdatedAt > maxCloudUpdatedAt { maxCloudUpdatedAt = cloudUpdatedAt }
 
-            // ✅ 名稱 → UUID
-            let resolvedCategoryID = nameToID[categoryName] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+            // ✅ 名稱 → UUID（使用 normalized key）
+            let normalizedKey = normalizeCategoryKey(categoryName)
+            let resolvedCategoryID = nameToID[normalizedKey] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+            
+            // ✅ Log when category is not found during full sync
+            if resolvedCategoryID == UUID(uuidString: "00000000-0000-0000-0000-000000000000")! {
+                print("⚠️ [Full Sync] Category '\(categoryName)' (normalized: '\(normalizedKey)') not found in local categories for item '\(name)'")
+                print("   Item will show as 'Unknown' until categories are synced")
+            }
 
             var finalImageName = ""
             if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -802,6 +971,9 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func pullCategories() async throws {
+        // ✅ First, check for deleted categories and remove them from local
+        try await pullAllDeletedCategories()
+        
         let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
         if supportsOrderIndex {
             query.sortDescriptors = [NSSortDescriptor(key: "orderIndex", ascending: true), NSSortDescriptor(key: "updatedAt", ascending: false)]
@@ -846,12 +1018,30 @@ final class iCloudSyncManager: ObservableObject {
         }
         for value in ordered { merged.append(value.0); usedIds.insert(value.0.id) }
         let cloudNameSet = Set(nameToBest.keys)
-        for lc in local {
-            let key = normalizeCategoryKey(lc.name)
-            if !cloudNameSet.contains(key) && !usedIds.contains(lc.id) { merged.append(lc) }
+        
+        // ✅ FIX: On first sync (fresh device), REPLACE local categories with cloud categories
+        // Only keep local categories if this is an established device with its own categories
+        let isFirstSync = lastCategorySyncDate == .distantPast
+        
+        if !isFirstSync {
+            // Normal operation: Keep local categories that don't exist in cloud
+            for lc in local {
+                let key = normalizeCategoryKey(lc.name)
+                if !cloudNameSet.contains(key) && !usedIds.contains(lc.id) { merged.append(lc) }
+            }
+        } else {
+            // First sync: Only use cloud categories, ignore default local categories
+            // This prevents duplicate categories when syncing to a new device
+            print("🔄 First category sync: Using cloud categories only (\(merged.count) categories)")
         }
+        
         saveLocalCategories(merged)
         if maxCloudUpdatedAt > lastCategorySyncDate { lastCategorySyncDate = maxCloudUpdatedAt }
+        
+        // ✅ Notify CategoryStore to reload
+        await MainActor.run {
+            NotificationCenter.default.post(name: Notification.Name.iCloudCategoriesSynced, object: nil)
+        }
     }
 
     private func cleanupDuplicateCategoryRecords(allRecords: [CKRecord], keepKeys: Set<CKRecord.ID>) async throws {
@@ -1127,5 +1317,7 @@ final class iCloudSyncManager: ObservableObject {
 
 // MARK: - Notification Names
 extension Notification.Name {
-    static let iCloudLocalStoreWiped = Notification.Name("iCloudLocalStoreWiped")
+    static let iCloudLocalStoreWiped = Notification.Name("com.daisyyang.mythings.iCloudLocalStoreWiped")
+    static let iCloudCategoriesSynced = Notification.Name("com.daisyyang.mythings.iCloudCategoriesSynced")
+    // Note: .iCloudRemoteNotificationReceived is declared in CloudKitAppDelegate.swift
 }

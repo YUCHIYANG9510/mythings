@@ -26,16 +26,18 @@ class CategoryStore: ObservableObject {
         self.iCloudSync = iCloudSync
         loadCategories()
 
-        if categories.isEmpty && !iCloudSync.isEnabled {
-            categories = [
-                Category(name: "3C Device", emoji: "🎧"),
-                Category(name: "Furniture",  emoji: "🪑"),
-                Category(name: "Kitchen",    emoji: "🍳"),
-                Category(name: "Clothes",    emoji: "👕"),
-                Category(name: "Shoes",      emoji: "👟"),
-                Category(name: "Bags",       emoji: "🎒")
-            ]
-            saveCategories()
+        // ✅ No default categories - users start with an empty category list
+        // They can add their own categories as needed
+        
+        // ✅ Listen for successful sync and reload categories
+        // This ensures we pick up synced categories from other devices
+        NotificationCenter.default.addObserver(
+            forName: .iCloudCategoriesSynced,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.loadCategories()
+            print("📂 CategoryStore: Reloaded categories after iCloud sync")
         }
     }
 

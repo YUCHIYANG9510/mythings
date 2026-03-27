@@ -4,18 +4,12 @@
 //
 
 import SwiftUI
-import Network
 
 struct ICloudSyncSettingsView: View {
     @EnvironmentObject var iCloudSync: iCloudSyncManager
 
-    // Set to false to hide the "Network" row
-    private let showNetworkRow = false
-
     @State private var showingCloudAlert = false
     @State private var cloudAlertMessage = ""
-
-    @StateObject private var networkMonitor = NetworkMonitor()
 
     // MARK: - Formatters
     private let lastSyncFormatter: DateFormatter = {
@@ -75,16 +69,6 @@ struct ICloudSyncSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    // Network (optional)
-                    if showNetworkRow {
-                        HStack {
-                            Text("Network")
-                            Spacer()
-                            Text(networkMonitor.isOnline ? "Available" : "Unavailable")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
                     // Last Sync Time
                     HStack {
                         Text("Last Sync Time")
@@ -132,31 +116,5 @@ struct ICloudSyncSettingsView: View {
         } message: {
             Text(cloudAlertMessage)
         }
-        .onAppear { networkMonitor.start() }
-        .onDisappear { networkMonitor.stop() }
-    }
-}
-
-// MARK: - Simple Network Monitor (can be moved to separate file)
-final class NetworkMonitor: ObservableObject {
-    @Published var isOnline: Bool = true
-    private var monitor: NWPathMonitor?
-    private let queue = DispatchQueue(label: "net.mon.queue")
-
-    func start() {
-        guard monitor == nil else { return }
-        let m = NWPathMonitor()
-        m.pathUpdateHandler = { [weak self] path in
-            DispatchQueue.main.async {
-                self?.isOnline = (path.status == .satisfied)
-            }
-        }
-        m.start(queue: queue)
-        monitor = m
-    }
-
-    func stop() {
-        monitor?.cancel()
-        monitor = nil
     }
 }

@@ -4,6 +4,35 @@ Use this checklist to verify all fixes are working correctly.
 
 ---
 
+## 🔴 TEST 0: CRITICAL - Category Sync (MUST TEST FIRST!)
+
+**THIS IS THE MOST IMPORTANT TEST - DO THIS BEFORE ANYTHING ELSE**
+
+### Fresh Device Category Sync
+- [ ] **Setup**: iPhone with 3-5 items across different categories
+- [ ] **Setup**: iPad with app deleted (clean install)
+- [ ] Install app on iPad from Xcode
+- [ ] Enable iCloud Sync on iPad
+- [ ] Wait 30-60 seconds for sync
+- [ ] **CRITICAL CHECK**: Open each item on iPad
+- [ ] **VERIFY**: Category is CORRECT (NOT "Unknown")
+- [ ] **VERIFY**: All items show proper category names
+- [ ] **VERIFY**: Category list matches iPhone
+
+**If ANY item shows "Unknown" category, STOP and report bug immediately!**
+
+### Live Category Sync Test
+- [ ] Both devices synced and working
+- [ ] iPhone: Create new category "Test Category"
+- [ ] iPhone: Add item with "Test Category"
+- [ ] Wait 30 seconds
+- [ ] iPad: Force quit and reopen app
+- [ ] **VERIFY**: New item shows "Test Category" (NOT "Unknown")
+
+📝 **Quick Test Guide**: See `QUICK_TEST_CATEGORY_FIX.md` for detailed steps
+
+---
+
 ## 🧪 Test 1: Physical File Deletion
 
 ### Grid View Context Menu
