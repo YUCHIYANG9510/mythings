@@ -80,6 +80,44 @@ struct AddItemView: View {
         guard let id = categoryID else { return "🧩" }
         return categoryStore.category(for: id)?.emoji ?? "🧩"
     }
+    
+    // MARK: - Quick Add Category Helper
+    
+    /// 快速新增：存入 CategoryStore 並自動選中（含免費版數量限制）
+    private func addQuickCategory() {
+        let trimmed = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        // ✅ 內聯重複檢查邏輯（繞過方法調用問題）
+        // 若名稱已存在，直接選中，不重複新增
+        if let existing = categoryStore.categories.first(where: { 
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == trimmed.lowercased() 
+        }) {
+            categoryID = existing.id
+            newCategoryName = ""
+            showCategorySheet = false
+            return
+        }
+
+        // ✅ 免費版上限檢查（同 ManageCategoriesView 邏輯）
+        guard pm.canAddCategory(currentCount: categoryStore.categories.count) else {
+            // 先關 category sheet，再開付費牆（避免 sheet 衝突）
+            showCategorySheet = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                showPaywallFromCategory = true
+            }
+            return
+        }
+
+        // ✅ 內聯新增邏輯（繞過方法調用問題）
+        let newCategory = Category(name: trimmed, emoji: newCategoryEmoji)
+        categoryStore.categories.append(newCategory)
+        
+        categoryID = categoryStore.categories.last?.id
+        newCategoryName = ""
+        newCategoryEmoji = "📦"
+        showCategorySheet = false
+    }
 
     var body: some View {
         NavigationView {
@@ -337,36 +375,6 @@ private extension AddItemView {
                 .presentationCornerRadius(40)
         }
     }
-
-    /// 快速新增：存入 CategoryStore 並自動選中（含免費版數量限制）
-    private func addQuickCategory() {
-        let trimmed = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        // 若名稱已存在，直接選中，不重複新增
-        if let existing = categoryStore.categories.first(where: { $0.name.lowercased() == trimmed.lowercased() }) {
-            categoryID = existing.id
-            newCategoryName = ""
-            showCategorySheet = false
-            return
-        }
-
-        // ✅ 免費版上限檢查（同 ManageCategoriesView 邏輯）
-        guard pm.canAddCategory(currentCount: categoryStore.categories.count) else {
-            // 先關 category sheet，再開付費牆（避免 sheet 衝突）
-            showCategorySheet = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                showPaywallFromCategory = true
-            }
-            return
-        }
-
-        categoryStore.addCategory(name: trimmed, emoji: newCategoryEmoji)
-        categoryID = categoryStore.categories.last?.id
-        newCategoryName = ""
-        newCategoryEmoji = "📦"
-        showCategorySheet = false
-    }
 }
 
 // MARK: - QuickAddCategoryRow
@@ -477,8 +485,15 @@ private extension AddItemView {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         return trimmed.hasPrefix("$") ? trimmed : "$" + trimmed
     }
+    
+    func isFormValid() -> Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !brand.trimmingCharacters(in: .whitespaces).isEmpty &&
+        categoryID != nil &&
+        !price.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
-    private func saveTapped() {
+    func saveTapped() {
         guard isFormValid() else { showValidationAlert = true; return }
         let itemId = existingItem?.id ?? UUID()
         var finalImageName = existingItem?.imageName ?? "\(itemId.uuidString).png"
@@ -517,14 +532,51 @@ private extension AddItemView {
             createdAt: existingItem?.createdAt ?? Date(),
             updatedAt: Date()
         )
+        
+        // ✅ Category 更新問題修正：
+        // 在呼叫 onComplete 之前，先確保 JSON 檔案已經更新
+        // 這樣當 iCloud sync 完成後觸發 loadItemsFromLocal() 時，
+        // 會載入到最新的資料，而不是覆蓋掉剛才的更改
+        saveItemDirectlyToFile(item)
+        
         onComplete(item)
     }
-
-    func isFormValid() -> Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !brand.trimmingCharacters(in: .whitespaces).isEmpty &&
-        categoryID != nil &&
-        !price.trimmingCharacters(in: .whitespaces).isEmpty
+    
+    /// 直接將 item 寫入 JSON 檔案，確保持久化儲存與記憶體同步
+    /// 這樣可以避免 iCloud sync 完成後重新載入時覆蓋掉未儲存的更改
+    func saveItemDirectlyToFile(_ updatedItem: Item) {
+        let savePath = FileManager.documentsDirectory.appendingPathComponent("items.json")
+        
+        do {
+            // 讀取現有的所有 items
+            var items: [Item] = []
+            if FileManager.default.fileExists(atPath: savePath.path) {
+                let data = try Data(contentsOf: savePath)
+                items = try JSONDecoder().decode([Item].self, from: data)
+            }
+            
+            // 更新或新增這個 item
+            if let index = items.firstIndex(where: { $0.id == updatedItem.id }) {
+                // ✅ Ensure the updatedAt timestamp is very recent to prevent overwrite during sync
+                var freshItem = updatedItem
+                freshItem.updatedAt = Date()
+                items[index] = freshItem
+                
+                print("✅ Updated existing item: \(freshItem.name) with category \(categoryStore.name(for: freshItem.categoryID))")
+                print("   Category ID: \(freshItem.categoryID)")
+                print("   Updated at: \(freshItem.updatedAt)")
+            } else {
+                items.insert(updatedItem, at: 0)
+                print("✅ Added new item: \(updatedItem.name) with category \(categoryStore.name(for: updatedItem.categoryID))")
+            }
+            
+            // 寫回檔案
+            let encoded = try JSONEncoder().encode(items)
+            try encoded.write(to: savePath)
+            
+        } catch {
+            print("❌ Failed to save item directly to file: \(error)")
+        }
     }
 }
 

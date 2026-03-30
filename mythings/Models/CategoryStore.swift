@@ -61,6 +61,25 @@ class CategoryStore: ObservableObject {
     func category(for id: UUID) -> Category? {
         categories.first(where: { $0.id == id })
     }
+    
+    /// 檢查名稱是否已存在（不區分大小寫，忽略前後空白）
+    /// - Parameters:
+    ///   - name: 要檢查的名稱
+    ///   - excludingID: 排除特定 ID（用於編輯時，排除自己）
+    /// - Returns: true = 名稱已存在（重複）
+    
+    func isDuplicateName(_ name: String, excludingID: UUID? = nil) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return false }
+        
+        return categories.contains { category in
+            // 如果有提供 excludingID，跳過該 category（編輯模式）
+            if let excludeID = excludingID, category.id == excludeID {
+                return false
+            }
+            return category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == trimmed
+        }
+    }
 
     // MARK: - CRUD
 

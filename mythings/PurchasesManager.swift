@@ -16,7 +16,7 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
 
     // ⚠️ TESTING FLAG - Remove before release!
     #if DEBUG
-    private let forceProForTesting = true  // Set to false to disable test mode
+    private let forceProForTesting = false  // ✅ Set to false to test FREE version
     #endif
 
     // === 你的 RC entitlement 名稱 ===
@@ -72,6 +72,55 @@ final class PurchasesManager: NSObject, ObservableObject, PurchasesDelegate {
             if let p = productMap[SKU.lifetime] { return p.localizedPriceString }
         }
         return nil
+    }
+
+    /// ✅ 檢查訂閱是否有試用期（及試用期資訊）
+    func trialInfo(for plan: PaywallPlan) -> (hasTrial: Bool, duration: String?) {
+        let product: StoreProduct?
+        switch plan {
+        case .annual:
+            product = productMap[SKU.yearly]
+        case .lifetime:
+            product = nil  // 終身購買沒有試用期
+        }
+
+        guard let product else { return (false, nil) }
+
+        // RevenueCat 的 StoreProduct 提供 introductoryDiscount 資訊
+        if let intro = product.introductoryDiscount {
+            // intro.subscriptionPeriod 包含單位與數量
+            let period = intro.subscriptionPeriod
+            let unit = period.unit
+            let value = period.value
+
+            var durationText = ""
+            switch unit {
+            case .day:
+                durationText = "\(value)-day"
+            case .week:
+                durationText = "\(value)-week"
+            case .month:
+                durationText = "\(value)-month"
+            case .year:
+                durationText = "\(value)-year"
+            @unknown default:
+                durationText = "\(value) period"
+            }
+
+            #if DEBUG
+            print("[PM] 🎁 Trial found for \(plan): \(durationText) free trial")
+            print("[PM]    - Price after trial: \(product.localizedPriceString)")
+            print("[PM]    - Offer type: \(intro.paymentMode)")
+            #endif
+
+            return (true, durationText)
+        }
+
+        #if DEBUG
+        print("[PM] ⚠️ No trial configured for \(plan)")
+        #endif
+
+        return (false, nil)
     }
 
     // MARK: - Purchases

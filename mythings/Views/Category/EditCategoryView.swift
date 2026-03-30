@@ -18,6 +18,7 @@ struct EditCategoryView: View {
     @State private var emoji = ""
     @State private var showEmojiPicker = false
     @State private var showAlert = false
+    @State private var alertMessage = ""
     @State private var showDeleteAlert = false
 
     var body: some View {
@@ -72,12 +73,18 @@ struct EditCategoryView: View {
 
             // Save 按鈕（黑底）
             Button {
-                if categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let trimmed = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if trimmed.isEmpty {
+                    alertMessage = "Please enter a category name"
+                    showAlert = true
+                } else if categoryStore.isDuplicateName(trimmed, excludingID: category.id) {
+                    alertMessage = "A category with this name already exists"
                     showAlert = true
                 } else {
                     let updatedCategory = Category(
                         id: category.id,
-                        name: categoryName,
+                        name: trimmed,
                         emoji: emoji
                     )
                     categoryStore.updateCategory(category: updatedCategory)
@@ -115,8 +122,10 @@ struct EditCategoryView: View {
                 .presentationCornerRadius(40)
 
         }
-        .alert("Please enter a category name", isPresented: $showAlert) {
+        .alert("Error", isPresented: $showAlert) {
             Button("OK", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
         }
         .alert("Delete Category?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }

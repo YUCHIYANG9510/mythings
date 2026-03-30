@@ -677,22 +677,34 @@ final class iCloudSyncManager: ObservableObject {
             }
 
             if let index = local.firstIndex(where: { $0.id == uuid }) {
-                let chosenImageName = finalImageName.isEmpty ? local[index].imageName : finalImageName
-                let localCreated = local[index].createdAt
-                let finalCreated = cloudCreatedAt ?? localCreated
-                // ✅ 使用 categoryID: UUID 取代 category: String
-                let merged = Item(
-                    id: uuid,
-                    imageName: chosenImageName,
-                    brand: brand,
-                    categoryID: resolvedCategoryID,
-                    name: name,
-                    price: price,
-                    date: date,
-                    createdAt: finalCreated,
-                    updatedAt: cloudUpdatedAt
-                )
-                local[index] = merged
+                let localItem = local[index]
+                let localUpdatedAt = localItem.updatedAt
+                
+                // ✅ CRITICAL FIX: Only merge if cloud version is newer or equal
+                // This prevents iCloud from overwriting recent local edits
+                if cloudUpdatedAt >= localUpdatedAt {
+                    let chosenImageName = finalImageName.isEmpty ? local[index].imageName : finalImageName
+                    let localCreated = local[index].createdAt
+                    let finalCreated = cloudCreatedAt ?? localCreated
+                    // ✅ 使用 categoryID: UUID 取代 category: String
+                    let merged = Item(
+                        id: uuid,
+                        imageName: chosenImageName,
+                        brand: brand,
+                        categoryID: resolvedCategoryID,
+                        name: name,
+                        price: price,
+                        date: date,
+                        createdAt: finalCreated,
+                        updatedAt: cloudUpdatedAt
+                    )
+                    local[index] = merged
+                    print("✅ [Merge] Updated item '\(name)' from cloud (cloud: \(cloudUpdatedAt), local: \(localUpdatedAt))")
+                } else {
+                    // Local version is newer, keep it and log
+                    print("⏭️ [Merge] Skipped item '\(name)' - local version is newer (cloud: \(cloudUpdatedAt), local: \(localUpdatedAt))")
+                    print("   Local category: \(localItem.categoryID), Cloud category: \(resolvedCategoryID)")
+                }
             } else {
                 let fallbackCreated: Date = {
                     if let c = cloudCreatedAt { return c }
@@ -739,10 +751,18 @@ final class iCloudSyncManager: ObservableObject {
             }
         }
 
+        // ✅ IMPROVED: Always sort if we have ANY orderIndex data
+        // This ensures consistent ordering across devices
         if !idToOrderIndex.isEmpty {
             local.sort { a, b in
                 let ia = idToOrderIndex[a.id] ?? Int.max
                 let ib = idToOrderIndex[b.id] ?? Int.max
+                if ia != ib { return ia < ib }
+                // If both don't have orderIndex, preserve relative order
+                // by comparing names for consistency
+                if ia == Int.max && ib == Int.max {
+                    return a.name.lowercased() < b.name.lowercased()
+                }
                 return ia < ib
             }
         }
@@ -986,9 +1006,13 @@ final class iCloudSyncManager: ObservableObject {
 
         let local = loadLocalCategories()
         var maxCloudUpdatedAt: Date = lastCategorySyncDate
-        var nameToBest: [String: (Category, Date?, CKRecord.ID, Int?)] = [:]
+        
+        // ✅ CRITICAL FIX: Use Array instead of Dictionary to preserve CloudKit order
+        // Store: (Category, updatedAt, recordID, orderIndex, originalIndex)
+        var cloudCategories: [(Category, Date?, CKRecord.ID, Int?, Int)] = []
+        var seenNames = Set<String>()
 
-        for r in all {
+        for (index, r) in all.enumerated() {
             guard let idStr = r["id"] as? String, let uuid = UUID(uuidString: idStr), let name = r["name"] as? String else { continue }
             let emoji = (r["emoji"] as? String) ?? ""
             let updatedAt = r["updatedAt"] as? Date
@@ -996,28 +1020,42 @@ final class iCloudSyncManager: ObservableObject {
             let ord = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
             let key = normalizeCategoryKey(name)
             let candidate = Category(id: uuid, name: name, emoji: emoji)
-            if let exist = nameToBest[key] {
-                let existingDate = exist.1 ?? .distantPast
+            
+            // Keep only the latest version for each category name
+            if let existingIndex = cloudCategories.firstIndex(where: { normalizeCategoryKey($0.0.name) == key }) {
+                let existingDate = cloudCategories[existingIndex].1 ?? .distantPast
                 let newDate = updatedAt ?? .distantPast
-                if newDate >= existingDate { nameToBest[key] = (candidate, updatedAt, r.recordID, ord) }
+                if newDate >= existingDate {
+                    cloudCategories[existingIndex] = (candidate, updatedAt, r.recordID, ord, index)
+                }
             } else {
-                nameToBest[key] = (candidate, updatedAt, r.recordID, ord)
+                cloudCategories.append((candidate, updatedAt, r.recordID, ord, index))
+                seenNames.insert(key)
             }
         }
 
-        try await cleanupDuplicateCategoryRecords(allRecords: all, keepKeys: Set(nameToBest.values.map { $0.2 }))
+        try await cleanupDuplicateCategoryRecords(allRecords: all, keepKeys: Set(cloudCategories.map { $0.2 }))
 
+        // ✅ Sort by orderIndex (if available), then by original CloudKit order
+        cloudCategories.sort { a, b in
+            // If both have orderIndex, use it
+            if let ia = a.3, let ib = b.3 {
+                return ia < ib
+            }
+            // If only one has orderIndex, it goes first
+            if a.3 != nil { return true }
+            if b.3 != nil { return false }
+            // Otherwise preserve CloudKit query order (which respects sortDescriptors)
+            return a.4 < b.4
+        }
+        
         var merged: [Category] = []
         var usedIds = Set<UUID>()
-        let ordered = nameToBest.values.sorted { a, b in
-            let ia = a.3 ?? Int.max; let ib = b.3 ?? Int.max
-            if ia != ib { return ia < ib }
-            let da = a.1 ?? .distantPast; let db = b.1 ?? .distantPast
-            if da != db { return da > db }
-            return a.0.name.lowercased() < b.0.name.lowercased()
+        for value in cloudCategories {
+            merged.append(value.0)
+            usedIds.insert(value.0.id)
         }
-        for value in ordered { merged.append(value.0); usedIds.insert(value.0.id) }
-        let cloudNameSet = Set(nameToBest.keys)
+        let cloudNameSet = seenNames
         
         // ✅ FIX: On first sync (fresh device), REPLACE local categories with cloud categories
         // Only keep local categories if this is an established device with its own categories

@@ -167,8 +167,23 @@ struct PaywallView: View {
                 Image(systemName: selected.wrappedValue == plan ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(selected.wrappedValue == plan ? Color.black : Color.secondary)
                     .font(.title3)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.title).font(.headline)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(plan.title).font(.headline)
+                        // ✅ 顯示試用期標籤（如果有的話）
+                        if plan == .annual {
+                            let trialInfo = pm.trialInfo(for: .annual)
+                            if trialInfo.hasTrial, let duration = trialInfo.duration {
+                                Text("\(duration) free")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
                     Text(plan.subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()

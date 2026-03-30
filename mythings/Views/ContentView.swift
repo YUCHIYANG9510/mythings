@@ -199,7 +199,30 @@ struct ContentView: View {
 
         .onReceive(iCloudSync.$syncStatus) { status in
             if case .success = status {
+                // ✅ Fix: Preserve recently updated items to prevent iCloud from overwriting local edits
+                // Store items that were updated in the last 10 seconds (likely from user edits)
+                let recentThreshold = Date().addingTimeInterval(-10)
+                let recentlyUpdated = items.filter { $0.updatedAt > recentThreshold }
+                
                 loadItemsFromLocal()
+                
+                // ✅ Restore recently updated items that might have been overwritten
+                // This prevents the race condition where iCloud sync overwrites local edits
+                for recentItem in recentlyUpdated {
+                    if let index = items.firstIndex(where: { $0.id == recentItem.id }) {
+                        // Only restore if the recent item is actually newer
+                        if recentItem.updatedAt > items[index].updatedAt {
+                            items[index] = recentItem
+                            print("✅ Preserved recent edit for item: \(recentItem.name)")
+                        }
+                    }
+                }
+                
+                // Save the preserved changes back to disk
+                if !recentlyUpdated.isEmpty {
+                    saveItems()
+                }
+                
                 // ✅ Bug 2 fix：iCloud sync 成功後也需要跑 migration
                 // 否則從其他裝置 pull 回來的舊格式 item 會顯示 "Unknown" category
                 let snapshot = categoryStore.categories
