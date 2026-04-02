@@ -318,6 +318,29 @@ final class iCloudSyncManager: ObservableObject {
         if case .syncing = syncStatus { return }
         manualSync()
     }
+    
+    /// ✅ 批量刪除 items（等待完成）
+    /// 用於「刪除所有東西」功能，確保所有刪除都同步到 iCloud 後才返回
+    func deleteAllItemsSync(_ itemIDs: [UUID]) async throws {
+        guard isEnabled else { return }
+        guard !itemIDs.isEmpty else { return }
+        
+        print("🗑️ Batch deleting \(itemIDs.count) items to iCloud...")
+        
+        // 使用 TaskGroup 並行處理刪除，但等待全部完成
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for id in itemIDs {
+                group.addTask {
+                    try await self.deleteItemOnCloud(id)
+                }
+            }
+            
+            // 等待所有刪除完成
+            try await group.waitForAll()
+        }
+        
+        print("✅ Batch deletion completed: \(itemIDs.count) items")
+    }
 
     func checkiCloudAvailability() -> Bool {
         FileManager.default.ubiquityIdentityToken != nil
@@ -777,6 +800,11 @@ final class iCloudSyncManager: ObservableObject {
         try ensureLocalFolders()
         try await pullAllDeletedItems()
         try await pullAllDeletedCategories()
+        
+        // ✅ NEW: Clean up old name-based category records during full sync
+        // This is a one-time migration that will gradually clean up old records
+        await cleanupOldNameBasedCategoryRecords()
+        
         let items = loadLocalItems()
         let cats = loadLocalCategories()
         // ✅ Push categories before items (order doesn't matter as much for push)
@@ -892,8 +920,11 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func pushSingleCategory(_ category: Category, orderIndex: Int) async throws {
-        let key = normalizeCategoryKey(category.name)
-        let rid = CKRecord.ID(recordName: "category-name-\(key)")
+        // ✅ CRITICAL FIX: Use UUID as recordName instead of category name
+        // This prevents duplicate categories when renaming (e.g., "Pikmin" → "Coffee")
+        // Old behavior: recordName = "category-name-pikmin" → rename → creates "category-name-coffee"
+        // New behavior: recordName = "category-uuid-xxx" → rename → updates same record
+        let rid = CKRecord.ID(recordName: "category-uuid-\(category.id.uuidString)")
         let rec = try await fetchOrCreate(recordType: "Category", id: rid)
         rec["id"] = category.id.uuidString as CKRecordValue
         rec["name"] = category.name as CKRecordValue
@@ -901,6 +932,27 @@ final class iCloudSyncManager: ObservableObject {
         rec["updatedAt"] = Date() as CKRecordValue
         rec["orderIndex"] = NSNumber(value: orderIndex)
         _ = try await dbSave(rec)
+        
+        // ✅ After successfully saving with UUID-based recordName, clean up old name-based records
+        // This ensures old "category-name-xxx" records are removed from CloudKit
+        let normalizedKey = normalizeCategoryKey(category.name)
+        let oldNameBasedRecordID = CKRecord.ID(recordName: "category-name-\(normalizedKey)")
+        
+        // Check if old record exists and delete it
+        do {
+            let oldRecord = try await dbFetch(recordID: oldNameBasedRecordID)
+            // Only delete if it has the same category ID (to avoid deleting unrelated records)
+            if let oldRecordID = oldRecord["id"] as? String, oldRecordID == category.id.uuidString {
+                try await privateDB.deleteRecord(withID: oldNameBasedRecordID)
+                print("🧹 Cleaned up old name-based category record: \(oldNameBasedRecordID.recordName)")
+            }
+        } catch let error as CKError where error.code == .unknownItem {
+            // Old record doesn't exist, which is fine
+            print("✅ No old name-based record to clean up for category: \(category.name)")
+        } catch {
+            // Other errors during cleanup should not fail the whole sync
+            print("⚠️ Failed to clean up old category record: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Pull 全量
@@ -1007,10 +1059,12 @@ final class iCloudSyncManager: ObservableObject {
         let local = loadLocalCategories()
         var maxCloudUpdatedAt: Date = lastCategorySyncDate
         
-        // ✅ CRITICAL FIX: Use Array instead of Dictionary to preserve CloudKit order
+        // ✅ CRITICAL FIX: Deduplicate by UUID instead of name to handle renames correctly
+        // When a category is renamed (e.g., "Pikmin" → "Coffee"), both old and new records
+        // may exist in CloudKit temporarily. We need to keep only the latest version by UUID.
         // Store: (Category, updatedAt, recordID, orderIndex, originalIndex)
         var cloudCategories: [(Category, Date?, CKRecord.ID, Int?, Int)] = []
-        var seenNames = Set<String>()
+        var seenUUIDs = Set<UUID>()
 
         for (index, r) in all.enumerated() {
             guard let idStr = r["id"] as? String, let uuid = UUID(uuidString: idStr), let name = r["name"] as? String else { continue }
@@ -1018,19 +1072,24 @@ final class iCloudSyncManager: ObservableObject {
             let updatedAt = r["updatedAt"] as? Date
             if let upd = updatedAt, upd > maxCloudUpdatedAt { maxCloudUpdatedAt = upd }
             let ord = supportsOrderIndex ? (r["orderIndex"] as? NSNumber)?.intValue : nil
-            let key = normalizeCategoryKey(name)
             let candidate = Category(id: uuid, name: name, emoji: emoji)
             
-            // Keep only the latest version for each category name
-            if let existingIndex = cloudCategories.firstIndex(where: { normalizeCategoryKey($0.0.name) == key }) {
+            // ✅ CRITICAL FIX: Deduplicate by UUID instead of name
+            // This ensures that when a category is renamed, we keep the latest version
+            // Old logic: Deduplicated by name → "Pikmin" and "Coffee" treated as different
+            // New logic: Deduplicate by UUID → Same category, keep latest updatedAt
+            if let existingIndex = cloudCategories.firstIndex(where: { $0.0.id == uuid }) {
                 let existingDate = cloudCategories[existingIndex].1 ?? .distantPast
                 let newDate = updatedAt ?? .distantPast
                 if newDate >= existingDate {
+                    print("🔄 [Category Dedup] Updating category '\(name)' (UUID: \(uuid)) - newer version found (old: \(existingDate), new: \(newDate))")
                     cloudCategories[existingIndex] = (candidate, updatedAt, r.recordID, ord, index)
+                } else {
+                    print("⏭️ [Category Dedup] Skipping older version of category '\(name)' (UUID: \(uuid))")
                 }
             } else {
                 cloudCategories.append((candidate, updatedAt, r.recordID, ord, index))
-                seenNames.insert(key)
+                seenUUIDs.insert(uuid)
             }
         }
 
@@ -1055,17 +1114,19 @@ final class iCloudSyncManager: ObservableObject {
             merged.append(value.0)
             usedIds.insert(value.0.id)
         }
-        let cloudNameSet = seenNames
         
         // ✅ FIX: On first sync (fresh device), REPLACE local categories with cloud categories
         // Only keep local categories if this is an established device with its own categories
         let isFirstSync = lastCategorySyncDate == .distantPast
         
         if !isFirstSync {
-            // Normal operation: Keep local categories that don't exist in cloud
+            // Normal operation: Keep local categories that don't exist in cloud (by UUID)
             for lc in local {
-                let key = normalizeCategoryKey(lc.name)
-                if !cloudNameSet.contains(key) && !usedIds.contains(lc.id) { merged.append(lc) }
+                // ✅ Check by UUID instead of name to handle renames correctly
+                if !usedIds.contains(lc.id) {
+                    merged.append(lc)
+                    usedIds.insert(lc.id)
+                }
             }
         } else {
             // First sync: Only use cloud categories, ignore default local categories
@@ -1179,6 +1240,65 @@ final class iCloudSyncManager: ObservableObject {
             try await deleteRecordsInBatches(ids: ids)
             print("✅ Purged all Category records from iCloud: \(ids.count)")
         } catch { print("❌ Purge categories from iCloud failed: \(error)") }
+    }
+    
+    /// ✅ NEW: Clean up old name-based category records after migration to UUID-based records
+    /// This function finds all old "category-name-xxx" records and deletes them if a corresponding
+    /// "category-uuid-xxx" record exists for the same category ID.
+    /// Call this during initial sync or as a maintenance operation.
+    func cleanupOldNameBasedCategoryRecords() async {
+        do {
+            print("🧹 Starting cleanup of old name-based category records...")
+            
+            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
+            var all: [CKRecord] = []
+            var cursor: CKQueryOperation.Cursor?
+            repeat { 
+                let page = try await performQuery(query: query, cursor: cursor)
+                all.append(contentsOf: page.records)
+                cursor = page.cursor
+            } while cursor != nil
+            
+            // Separate records into UUID-based and name-based
+            var uuidBasedRecords: [String: CKRecord] = [:] // categoryID -> record
+            var nameBasedRecords: [CKRecord] = []
+            
+            for record in all {
+                let recordName = record.recordID.recordName
+                if recordName.hasPrefix("category-uuid-") {
+                    // UUID-based record (new format)
+                    if let categoryID = record["id"] as? String {
+                        uuidBasedRecords[categoryID] = record
+                    }
+                } else if recordName.hasPrefix("category-name-") {
+                    // Name-based record (old format)
+                    nameBasedRecords.append(record)
+                }
+            }
+            
+            // Find name-based records that have corresponding UUID-based records
+            var recordsToDelete: [CKRecord.ID] = []
+            for oldRecord in nameBasedRecords {
+                if let categoryID = oldRecord["id"] as? String {
+                    // Check if UUID-based record exists for this category
+                    if uuidBasedRecords[categoryID] != nil {
+                        recordsToDelete.append(oldRecord.recordID)
+                        let name = (oldRecord["name"] as? String) ?? "unknown"
+                        print("   📍 Found old record to delete: \(oldRecord.recordID.recordName) (category: \(name), ID: \(categoryID))")
+                    }
+                }
+            }
+            
+            // Delete old records in batches
+            if !recordsToDelete.isEmpty {
+                try await deleteRecordsInBatches(ids: recordsToDelete)
+                print("✅ Cleaned up \(recordsToDelete.count) old name-based category records")
+            } else {
+                print("✅ No old name-based category records to clean up")
+            }
+        } catch {
+            print("❌ Failed to clean up old category records: \(error)")
+        }
     }
 
     // MARK: - Delete（協調器呼叫）

@@ -124,21 +124,36 @@ struct SettingsView: View {
         guard !items.isEmpty else { return }
         isDeletingAll = true
 
-        let ids = items.map { $0.id }
+        let itemsToDelete = items
+        let itemIDs = itemsToDelete.map { $0.id }
 
         Task {
+            // ✅ CRITICAL FIX: 先同步刪除到 iCloud，再清空本地
+            // 這樣可以確保墓碑記錄先被創建，避免物件重新出現
+            if iCloudSync.isEnabled {
+                print("🗑️ Syncing deletion of \(itemsToDelete.count) items to iCloud...")
+                
+                do {
+                    // 使用批量刪除方法（會等待所有刪除完成）
+                    try await iCloudSync.deleteAllItemsSync(itemIDs)
+                    print("✅ iCloud deletion sync completed")
+                } catch {
+                    print("❌ iCloud deletion failed: \(error)")
+                    // 即使 iCloud 刪除失敗，仍然繼續刪除本地數據
+                }
+            }
+            
+            // 現在才刪除本地數據
             await deleteAllImageFiles()
             await MainActor.run {
                 items.removeAll()
                 saveItems()
             }
-            if iCloudSync.isEnabled {
-                for id in ids {
-                    iCloudSync.schedule(.deleteItem(id))
-                }
-            }
+            
             await MainActor.run { isDeletingAll = false }
             ImageCacheManager.shared.invalidateCache()
+            
+            print("✅ Local deletion completed")
         }
     }
 
