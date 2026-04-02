@@ -105,14 +105,34 @@ struct ContentView: View {
     }
 
     // 向下相容：給 CategoryScrollView / CategoryPager 用的純字串陣列
+    // 現在包含數量，例如 "All (54)"、"Device (5)"
     var categoryNames: [String] {
-        categoryPages.map { $0.name }
+        categoryPages.map { page in
+            let count = itemsCountFor(categoryID: page.id)
+            return "\(page.name) (\(count))"
+        }
+    }
+    
+    // 計算每個 category 的物件數量（不包含搜尋過濾）
+    private func itemsCountFor(categoryID: UUID?) -> Int {
+        if let id = categoryID {
+            return items.filter { $0.categoryID == id }.count
+        } else {
+            return items.count
+        }
     }
 
     // 目前選中分類的顯示名稱（給 CategoryScrollView binding 用）
+    // 現在包含數量，例如 "All (54)"
     private var selectedCategoryName: String {
-        guard let id = selectedCategoryID else { return "All" }
-        return categoryStore.name(for: id)
+        let name: String
+        if let id = selectedCategoryID {
+            name = categoryStore.name(for: id)
+        } else {
+            name = "All"
+        }
+        let count = itemsCountFor(categoryID: selectedCategoryID)
+        return "\(name) (\(count))"
     }
 
     // MARK: - 排序後的顯示清單
@@ -143,8 +163,15 @@ struct ContentView: View {
                             categoryNames: categoryNames,
                             selectedCategory: Binding(
                                 get: { selectedCategoryName },
-                                set: { name in
-                                    selectedCategoryID = categoryPages.first(where: { $0.name == name })?.id ?? nil
+                                set: { nameWithCount in
+                                    // 從 "Device (5)" 提取 "Device"
+                                    let pureName: String
+                                    if let range = nameWithCount.range(of: " (") {
+                                        pureName = String(nameWithCount[..<range.lowerBound])
+                                    } else {
+                                        pureName = nameWithCount
+                                    }
+                                    selectedCategoryID = categoryPages.first(where: { $0.name == pureName })?.id ?? nil
                                 }
                             )
                         )
