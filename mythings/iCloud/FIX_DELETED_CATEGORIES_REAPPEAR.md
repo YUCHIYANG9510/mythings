@@ -42,7 +42,7 @@ Step 2: User turns sync ON
 
 ## ✅ The Solution
 
-### Three-Part Fix
+### Four-Part Fix
 
 #### Fix 1: Check Tombstones FIRST
 
@@ -104,6 +104,32 @@ await MainActor.run {
 ```
 
 **Impact**: UI updates immediately with synced categories.
+
+#### Fix 4: Notify CategoryStore When Removing via Tombstones
+
+When `removeLocalCategories()` removes categories based on DeletedCategory tombstones, it must notify CategoryStore to reload.
+
+**Problem**: Without notification, CategoryStore's in-memory copy remains stale and can overwrite the deletion on next save.
+
+**Code Change** in `removeLocalCategories()`:
+```swift
+private func removeLocalCategories(withIDs ids: Set<UUID>) async throws {
+    var local = loadLocalCategories()
+    let before = local.count
+    local.removeAll { ids.contains($0.id) }
+    if local.count != before {
+        saveLocalCategories(local)
+        print("🧹 Removed \(before - local.count) local category(ies) by DeletedCategory tombstones.")
+        
+        // ✅ NEW: Notify CategoryStore to reload
+        await MainActor.run {
+            NotificationCenter.default.post(name: .iCloudCategoriesSynced, object: nil)
+        }
+    }
+}
+```
+
+**Impact**: Ensures CategoryStore always has the latest data after tombstone processing, preventing deleted categories from reappearing.
 
 ---
 
@@ -260,6 +286,7 @@ iPad (fresh install):
 - ✅ Check tombstones before merging
 - ✅ First sync replaces instead of merges
 - ✅ Notify UI when categories sync
+- ✅ Notify CategoryStore when removing via tombstones (prevents reappearing categories)
 
 ---
 

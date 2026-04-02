@@ -1240,7 +1240,15 @@ final class iCloudSyncManager: ObservableObject {
         var local = loadLocalItems()
         let before = local.count
         local.removeAll { ids.contains($0.id) }
-        if local.count != before { saveLocalItems(local); print("🧹 Removed \(before - local.count) local item(s) by DeletedItem tombstones.") }
+        if local.count != before {
+            saveLocalItems(local)
+            print("🧹 Removed \(before - local.count) local item(s) by DeletedItem tombstones.")
+            
+            // ✅ Notify to refresh UI if needed
+            await MainActor.run {
+                NotificationCenter.default.post(name: .iCloudLocalStoreWiped, object: nil)
+            }
+        }
     }
 
     private func pullAllDeletedItems() async throws {
@@ -1279,7 +1287,16 @@ final class iCloudSyncManager: ObservableObject {
         var local = loadLocalCategories()
         let before = local.count
         local.removeAll { ids.contains($0.id) }
-        if local.count != before { saveLocalCategories(local); print("🧹 Removed \(before - local.count) local category(ies) by DeletedCategory tombstones.") }
+        if local.count != before {
+            saveLocalCategories(local)
+            print("🧹 Removed \(before - local.count) local category(ies) by DeletedCategory tombstones.")
+            
+            // ✅ CRITICAL FIX: Notify CategoryStore to reload after removing categories
+            // Without this, CategoryStore's in-memory copy is stale and may overwrite the deletion
+            await MainActor.run {
+                NotificationCenter.default.post(name: .iCloudCategoriesSynced, object: nil)
+            }
+        }
     }
 
     // MARK: - CK helpers
