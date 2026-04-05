@@ -300,7 +300,6 @@ final class iCloudSyncManager: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isEnabled else { return }
-                print("📲 iCloudSyncManager received remote notification, starting sync")
                 self.schedule(.full)
             }
         }
@@ -337,8 +336,6 @@ final class iCloudSyncManager: ObservableObject {
         guard isEnabled else { return }
         guard !itemIDs.isEmpty else { return }
         
-        print("🗑️ Batch deleting \(itemIDs.count) items to iCloud...")
-        
         // 使用 TaskGroup 並行處理刪除，但等待全部完成
         try await withThrowingTaskGroup(of: Void.self) { group in
             for id in itemIDs {
@@ -350,8 +347,6 @@ final class iCloudSyncManager: ObservableObject {
             // 等待所有刪除完成
             try await group.waitForAll()
         }
-        
-        print("✅ Batch deletion completed: \(itemIDs.count) items")
     }
 
     func checkiCloudAvailability() -> Bool {
@@ -425,12 +420,12 @@ final class iCloudSyncManager: ObservableObject {
             if !existingIDs.contains("item-changes-sub") {
                 let sub = CKQuerySubscription(recordType: "Item", predicate: NSPredicate(value: true), subscriptionID: "item-changes-sub", options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion])
                 let note = CKSubscription.NotificationInfo(); note.shouldSendContentAvailable = true; sub.notificationInfo = note
-                _ = try await dbSave(sub); print("✅ Created Item CloudKit subscription")
+                _ = try await dbSave(sub)
             }
             if !existingIDs.contains("category-changes-sub") {
                 let sub = CKQuerySubscription(recordType: "Category", predicate: NSPredicate(value: true), subscriptionID: "category-changes-sub", options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion])
                 let note = CKSubscription.NotificationInfo(); note.shouldSendContentAvailable = true; sub.notificationInfo = note
-                _ = try await dbSave(sub); print("✅ Created Category CloudKit subscription")
+                _ = try await dbSave(sub)
             }
         } catch { print("⚠️ CloudKit subscription setup failed (non-fatal): \(error)") }
     }
@@ -540,22 +535,11 @@ final class iCloudSyncManager: ObservableObject {
         
         for cat in categories {
             let key = normalizeCategoryKey(cat.name)
-            if let existingID = map[key] {
-                print("⚠️ Duplicate category name detected: '\(cat.name)' (normalized: '\(key)')")
-                print("   Existing ID: \(existingID), New ID: \(cat.id)")
-                // Keep the first one found, but log the conflict
+            if map[key] != nil {
+                // Keep the first one found (duplicate detected but silently handled)
             } else {
                 map[key] = cat.id
             }
-        }
-        
-        if !map.isEmpty {
-            print("📂 Category name→ID map built with \(map.count) categories:")
-            for (name, id) in map.sorted(by: { $0.key < $1.key }) {
-                print("   '\(name)' → \(id)")
-            }
-        } else {
-            print("⚠️ Category name→ID map is EMPTY! Items will get nil UUID.")
         }
         
         return map
@@ -692,12 +676,6 @@ final class iCloudSyncManager: ObservableObject {
             // ✅ 名稱 → UUID（使用 normalized key）
             let normalizedKey = normalizeCategoryKey(categoryName)
             let resolvedCategoryID = nameToID[normalizedKey] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-            
-            // ✅ Log when category is not found during incremental sync
-            if resolvedCategoryID == UUID(uuidString: "00000000-0000-0000-0000-000000000000")! {
-                print("⚠️ [Incremental Sync] Category '\(categoryName)' (normalized: '\(normalizedKey)') not found in local categories for item '\(name)'")
-                print("   Item will show as 'Unknown' until categories are synced")
-            }
 
             var finalImageName = ""
             if let asset = record["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -734,11 +712,8 @@ final class iCloudSyncManager: ObservableObject {
                         updatedAt: cloudUpdatedAt
                     )
                     local[index] = merged
-                    print("✅ [Merge] Updated item '\(name)' from cloud (cloud: \(cloudUpdatedAt), local: \(localUpdatedAt))")
                 } else {
-                    // Local version is newer, keep it and log
-                    print("⏭️ [Merge] Skipped item '\(name)' - local version is newer (cloud: \(cloudUpdatedAt), local: \(localUpdatedAt))")
-                    print("   Local category: \(localItem.categoryID), Cloud category: \(resolvedCategoryID)")
+                    // Local version is newer, keep it
                 }
             } else {
                 let fallbackCreated: Date = {
@@ -813,10 +788,6 @@ final class iCloudSyncManager: ObservableObject {
         try await pullAllDeletedItems()
         try await pullAllDeletedCategories()
         
-        // ✅ NEW: Clean up old name-based category records during full sync
-        // This is a one-time migration that will gradually clean up old records
-        await cleanupOldNameBasedCategoryRecords()
-        
         let items = loadLocalItems()
         let cats = loadLocalCategories()
         // ✅ Push categories before items (order doesn't matter as much for push)
@@ -841,7 +812,6 @@ final class iCloudSyncManager: ObservableObject {
                 } catch let e as CKError where isRetryableError(e) && attempts < maxRetryAttempts - 1 {
                     attempts += 1
                     let delay = calculateBackoffDelay(attempt: attempts)
-                    print("⚠️ Retrying push item (attempt \(attempts)/\(maxRetryAttempts)): \(e.localizedDescription)")
                     try await Task.sleep(nanoseconds: delay)
                 } catch {
                     throw error
@@ -865,7 +835,6 @@ final class iCloudSyncManager: ObservableObject {
                 } catch let e as CKError where isRetryableError(e) && attempts < maxRetryAttempts - 1 {
                     attempts += 1
                     let delay = calculateBackoffDelay(attempt: attempts)
-                    print("⚠️ Retrying push category (attempt \(attempts)/\(maxRetryAttempts)): \(e.localizedDescription)")
                     try await Task.sleep(nanoseconds: delay)
                 } catch {
                     throw error
@@ -956,14 +925,11 @@ final class iCloudSyncManager: ObservableObject {
             // Only delete if it has the same category ID (to avoid deleting unrelated records)
             if let oldRecordID = oldRecord["id"] as? String, oldRecordID == category.id.uuidString {
                 try await privateDB.deleteRecord(withID: oldNameBasedRecordID)
-                print("🧹 Cleaned up old name-based category record: \(oldNameBasedRecordID.recordName)")
             }
         } catch let error as CKError where error.code == .unknownItem {
             // Old record doesn't exist, which is fine
-            print("✅ No old name-based record to clean up for category: \(category.name)")
         } catch {
             // Other errors during cleanup should not fail the whole sync
-            print("⚠️ Failed to clean up old category record: \(error.localizedDescription)")
         }
     }
 
@@ -1001,12 +967,6 @@ final class iCloudSyncManager: ObservableObject {
             // ✅ 名稱 → UUID（使用 normalized key）
             let normalizedKey = normalizeCategoryKey(categoryName)
             let resolvedCategoryID = nameToID[normalizedKey] ?? UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
-            
-            // ✅ Log when category is not found during full sync
-            if resolvedCategoryID == UUID(uuidString: "00000000-0000-0000-0000-000000000000")! {
-                print("⚠️ [Full Sync] Category '\(categoryName)' (normalized: '\(normalizedKey)') not found in local categories for item '\(name)'")
-                print("   Item will show as 'Unknown' until categories are synced")
-            }
 
             var finalImageName = ""
             if let asset = r["image"] as? CKAsset, let cloudURL = asset.fileURL {
@@ -1094,10 +1054,7 @@ final class iCloudSyncManager: ObservableObject {
                 let existingDate = cloudCategories[existingIndex].1 ?? .distantPast
                 let newDate = updatedAt ?? .distantPast
                 if newDate >= existingDate {
-                    print("🔄 [Category Dedup] Updating category '\(name)' (UUID: \(uuid)) - newer version found (old: \(existingDate), new: \(newDate))")
                     cloudCategories[existingIndex] = (candidate, updatedAt, r.recordID, ord, index)
-                } else {
-                    print("⏭️ [Category Dedup] Skipping older version of category '\(name)' (UUID: \(uuid))")
                 }
             } else {
                 cloudCategories.append((candidate, updatedAt, r.recordID, ord, index))
@@ -1143,7 +1100,6 @@ final class iCloudSyncManager: ObservableObject {
         } else {
             // First sync: Only use cloud categories, ignore default local categories
             // This prevents duplicate categories when syncing to a new device
-            print("🔄 First category sync: Using cloud categories only (\(merged.count) categories)")
         }
         
         saveLocalCategories(merged)
@@ -1192,126 +1148,8 @@ final class iCloudSyncManager: ObservableObject {
         if !toDelete.isEmpty { try await deleteRecordsInBatches(ids: Array(Set(toDelete))) }
     }
 
-    // MARK: - Public maintenance
-    func countAllRecords() async -> (items: Int, categories: Int) { (await countItemRecords(), await countCategoryRecords()) }
-    func countItemRecords() async -> Int { await countRecords(of: "Item") }
-    func countCategoryRecords() async -> Int { await countRecords(of: "Category") }
 
-    func purgeAllItemsCloud() async {
-        do {
-            let ids = try await fetchAllRecordIDs(of: "Item")
-            guard !ids.isEmpty else { print("ℹ️ No Item records to purge."); return }
-            try await deleteRecordsInBatches(ids: ids)
-            print("✅ Purged all Item records from iCloud: \(ids.count)")
-        } catch { print("❌ Purge items from iCloud failed: \(error)") }
-    }
 
-    func purgeAllCloud() async { await purgeAllItemsCloud(); await purgeAllCategoriesCloud() }
-
-    func wipeLocalStore() {
-        try? fm.removeItem(at: localItemsURL)
-        try? fm.removeItem(at: localCategoriesURL)
-        if let files = try? fm.contentsOfDirectory(at: localImagesDir, includingPropertiesForKeys: nil) {
-            for url in files { try? fm.removeItem(at: url) }
-        }
-        lastSyncDate = nil
-        UserDefaults.standard.removeObject(forKey: "icloud.sync.lastDate")
-        lastItemSyncDate = .distantPast
-        lastCategorySyncDate = .distantPast
-        lastDeletedSyncDate = .distantPast
-        lastDeletedCategorySyncDate = .distantPast
-        NotificationCenter.default.post(name: .iCloudLocalStoreWiped, object: nil)
-        print("🧹 Wiped local store and reset sync timestamps.")
-    }
-
-    private func countRecords(of recordType: String) async -> Int {
-        do {
-            var total = 0
-            let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-            var cursor: CKQueryOperation.Cursor?
-            repeat { let page = try await performQuery(query: query, cursor: cursor); total += page.records.count; cursor = page.cursor } while cursor != nil
-            return total
-        } catch { print("❌ countRecords(\(recordType)) failed: \(error)"); return 0 }
-    }
-
-    private func fetchAllRecordIDs(of recordType: String) async throws -> [CKRecord.ID] {
-        var ids: [CKRecord.ID] = []
-        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-        var cursor: CKQueryOperation.Cursor?
-        repeat { let page = try await performQuery(query: query, cursor: cursor); ids.append(contentsOf: page.records.map { $0.recordID }); cursor = page.cursor } while cursor != nil
-        return Array(Set(ids))
-    }
-
-    func purgeAllCategoriesCloud() async {
-        do {
-            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
-            var all: [CKRecord] = []
-            var cursor: CKQueryOperation.Cursor?
-            repeat { let page = try await performQuery(query: query, cursor: cursor); all.append(contentsOf: page.records); cursor = page.cursor } while cursor != nil
-            let ids = all.map { $0.recordID }
-            try await deleteRecordsInBatches(ids: ids)
-            print("✅ Purged all Category records from iCloud: \(ids.count)")
-        } catch { print("❌ Purge categories from iCloud failed: \(error)") }
-    }
-    
-    /// ✅ NEW: Clean up old name-based category records after migration to UUID-based records
-    /// This function finds all old "category-name-xxx" records and deletes them if a corresponding
-    /// "category-uuid-xxx" record exists for the same category ID.
-    /// Call this during initial sync or as a maintenance operation.
-    func cleanupOldNameBasedCategoryRecords() async {
-        do {
-            print("🧹 Starting cleanup of old name-based category records...")
-            
-            let query = CKQuery(recordType: "Category", predicate: NSPredicate(value: true))
-            var all: [CKRecord] = []
-            var cursor: CKQueryOperation.Cursor?
-            repeat { 
-                let page = try await performQuery(query: query, cursor: cursor)
-                all.append(contentsOf: page.records)
-                cursor = page.cursor
-            } while cursor != nil
-            
-            // Separate records into UUID-based and name-based
-            var uuidBasedRecords: [String: CKRecord] = [:] // categoryID -> record
-            var nameBasedRecords: [CKRecord] = []
-            
-            for record in all {
-                let recordName = record.recordID.recordName
-                if recordName.hasPrefix("category-uuid-") {
-                    // UUID-based record (new format)
-                    if let categoryID = record["id"] as? String {
-                        uuidBasedRecords[categoryID] = record
-                    }
-                } else if recordName.hasPrefix("category-name-") {
-                    // Name-based record (old format)
-                    nameBasedRecords.append(record)
-                }
-            }
-            
-            // Find name-based records that have corresponding UUID-based records
-            var recordsToDelete: [CKRecord.ID] = []
-            for oldRecord in nameBasedRecords {
-                if let categoryID = oldRecord["id"] as? String {
-                    // Check if UUID-based record exists for this category
-                    if uuidBasedRecords[categoryID] != nil {
-                        recordsToDelete.append(oldRecord.recordID)
-                        let name = (oldRecord["name"] as? String) ?? "unknown"
-                        print("   📍 Found old record to delete: \(oldRecord.recordID.recordName) (category: \(name), ID: \(categoryID))")
-                    }
-                }
-            }
-            
-            // Delete old records in batches
-            if !recordsToDelete.isEmpty {
-                try await deleteRecordsInBatches(ids: recordsToDelete)
-                print("✅ Cleaned up \(recordsToDelete.count) old name-based category records")
-            } else {
-                print("✅ No old name-based category records to clean up")
-            }
-        } catch {
-            print("❌ Failed to clean up old category records: \(error)")
-        }
-    }
 
     // MARK: - Delete（協調器呼叫）
     private func deleteItemOnCloud(_ itemId: UUID) async throws {
@@ -1321,13 +1159,13 @@ final class iCloudSyncManager: ObservableObject {
             tomb["id"] = itemId.uuidString as CKRecordValue
             tomb["updatedAt"] = Date() as CKRecordValue
             _ = try await dbSave(tomb)
-            print("🪦 Upserted DeletedItem tombstone for id=\(itemId)")
-        } catch { print("❗️Failed to upsert DeletedItem tombstone: \(error)") }
+        } catch {
+            print("Failed to upsert DeletedItem tombstone: \(error)")
+        }
 
         let rid = CKRecord.ID(recordName: "item-\(itemId.uuidString)")
         do {
             try await privateDB.deleteRecord(withID: rid)
-            print("✅ Deleted item from iCloud by recordID: \(itemId)")
         } catch let ck as CKError { if ck.code != .unknownItem { throw ck } } catch { throw error }
 
         let predicate = NSPredicate(format: "id == %@", itemId.uuidString)
@@ -1335,7 +1173,7 @@ final class iCloudSyncManager: ObservableObject {
         var idsToDelete: [CKRecord.ID] = []
         var cursor: CKQueryOperation.Cursor?
         repeat { let page = try await performQuery(query: query, cursor: cursor); idsToDelete.append(contentsOf: page.records.map { $0.recordID }); cursor = page.cursor } while cursor != nil
-        if !idsToDelete.isEmpty { try await deleteRecordsInBatches(ids: Array(Set(idsToDelete))); print("✅ Deleted \(idsToDelete.count) legacy Item record(s) for id=\(itemId)") }
+        if !idsToDelete.isEmpty { try await deleteRecordsInBatches(ids: Array(Set(idsToDelete))) }
     }
 
     private func deleteCategoryOnCloud(_ categoryId: UUID) async throws {
@@ -1345,15 +1183,16 @@ final class iCloudSyncManager: ObservableObject {
             tomb["id"] = categoryId.uuidString as CKRecordValue
             tomb["updatedAt"] = Date() as CKRecordValue
             _ = try await dbSave(tomb)
-            print("🪦 Upserted DeletedCategory tombstone for id=\(categoryId)")
-        } catch { print("❗️Failed to upsert DeletedCategory tombstone: \(error)") }
+        } catch {
+            print("Failed to upsert DeletedCategory tombstone: \(error)")
+        }
 
         let predicate = NSPredicate(format: "id == %@", categoryId.uuidString)
         let query = CKQuery(recordType: "Category", predicate: predicate)
         var idsToDelete: [CKRecord.ID] = []
         var cursor: CKQueryOperation.Cursor?
         repeat { let page = try await performQuery(query: query, cursor: cursor); idsToDelete.append(contentsOf: page.records.map { $0.recordID }); cursor = page.cursor } while cursor != nil
-        if !idsToDelete.isEmpty { try await deleteRecordsInBatches(ids: Array(Set(idsToDelete))); print("✅ Deleted \(idsToDelete.count) Category record(s) for id=\(categoryId)") }
+        if !idsToDelete.isEmpty { try await deleteRecordsInBatches(ids: Array(Set(idsToDelete))) }
     }
 
     // MARK: - DeletedItem tombstone
@@ -1374,7 +1213,6 @@ final class iCloudSyncManager: ObservableObject {
         local.removeAll { ids.contains($0.id) }
         if local.count != before {
             saveLocalItems(local)
-            print("🧹 Removed \(before - local.count) local item(s) by DeletedItem tombstones.")
             
             // ✅ Notify to refresh UI if needed
             await MainActor.run {
@@ -1421,7 +1259,6 @@ final class iCloudSyncManager: ObservableObject {
         local.removeAll { ids.contains($0.id) }
         if local.count != before {
             saveLocalCategories(local)
-            print("🧹 Removed \(before - local.count) local category(ies) by DeletedCategory tombstones.")
             
             // ✅ CRITICAL FIX: Notify CategoryStore to reload after removing categories
             // Without this, CategoryStore's in-memory copy is stale and may overwrite the deletion

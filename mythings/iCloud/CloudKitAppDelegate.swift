@@ -32,7 +32,7 @@ final class CloudKitAppDelegate: NSObject, UIApplicationDelegate {
 
     // APNs 註冊成功（token 不需要特別處理，CloudKit 自動管理）
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        print("✅ Registered for remote notifications")
+        // Successfully registered for remote notifications
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
@@ -52,8 +52,6 @@ final class CloudKitAppDelegate: NSObject, UIApplicationDelegate {
             completionHandler(.noData)
             return
         }
-
-        print("📲 CloudKit remote notification received, triggering sync...")
 
         // 找到 iCloudSyncManager 並觸發同步
         // 透過 NotificationCenter 廣播，避免直接依賴 EnvironmentObject

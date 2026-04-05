@@ -240,7 +240,6 @@ struct ContentView: View {
                         // Only restore if the recent item is actually newer
                         if recentItem.updatedAt > items[index].updatedAt {
                             items[index] = recentItem
-                            print("✅ Preserved recent edit for item: \(recentItem.name)")
                         }
                     }
                 }
@@ -506,7 +505,6 @@ struct ContentView: View {
 
         items = rawItems
         saveItems()
-        print("✅ Migration complete: \(rawItems.count) items migrated")
     }
 }
 
