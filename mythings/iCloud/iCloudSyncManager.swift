@@ -277,20 +277,32 @@ final class iCloudSyncManager: ObservableObject {
         // Store observers for cleanup
         let foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in guard let self, self.isEnabled else { return }; self.kickoffIfNeeded() }
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                self.kickoffIfNeeded()
+            }
+        }
         notificationObservers.append(foregroundObserver)
         
         let accountObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name.CKAccountChanged, object: nil, queue: .main
-        ) { [weak self] _ in guard let self, self.isEnabled else { return }; self.kickoffIfNeeded() }
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                self.kickoffIfNeeded()
+            }
+        }
         notificationObservers.append(accountObserver)
         
         let remoteObserver = NotificationCenter.default.addObserver(
             forName: .iCloudRemoteNotificationReceived, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self, self.isEnabled else { return }
-            print("📲 iCloudSyncManager received remote notification, starting sync")
-            self.schedule(.full)
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                print("📲 iCloudSyncManager received remote notification, starting sync")
+                self.schedule(.full)
+            }
         }
         notificationObservers.append(remoteObserver)
         
