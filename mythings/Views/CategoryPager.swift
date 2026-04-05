@@ -106,11 +106,12 @@ struct CategoryPager: View {
                 selectedCategoryID = categoryPages[realIndex].id
                 
                 // 無動畫跳轉到對應的真實位置
-                DispatchQueue.main.async {
+                withAnimation(.none) {
                     virtualSelectedPage = realIndex + 1
-                    DispatchQueue.main.async {
-                        isAdjusting = false
-                    }
+                }
+                // 使用 Task 確保在下一個 runloop 重置
+                Task { @MainActor in
+                    isAdjusting = false
                 }
             } else if newValue == virtualPages.count - 1 {
                 // 滑到虛擬最後一個（實際是第一個的副本）→ 跳到真實的第一個
@@ -119,11 +120,12 @@ struct CategoryPager: View {
                 selectedCategoryID = categoryPages[0].id
                 
                 // 無動畫跳轉到對應的真實位置
-                DispatchQueue.main.async {
+                withAnimation(.none) {
                     virtualSelectedPage = 1
-                    DispatchQueue.main.async {
-                        isAdjusting = false
-                    }
+                }
+                // 使用 Task 確保在下一個 runloop 重置
+                Task { @MainActor in
+                    isAdjusting = false
                 }
             } else {
                 // 正常範圍內的滑動
