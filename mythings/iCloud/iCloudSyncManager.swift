@@ -1337,6 +1337,15 @@ final class iCloudSyncManager: ObservableObject {
     }
 
     private func ensureLocalFolders() throws { try imageStore.ensureDirs(); _ = localImagesDir }
+
+    // MARK: - New public method to purge all categories from CloudKit
+    @MainActor
+    public func purgeAllCategoriesCloud() async {
+        let categoryIDs = loadLocalCategories().map { $0.id }
+        for id in categoryIDs {
+            try? await deleteCategoryOnCloud(id)
+        }
+    }
 }
 
 // MARK: - Notification Names
@@ -1345,3 +1354,4 @@ extension Notification.Name {
     static let iCloudCategoriesSynced = Notification.Name("com.daisyyang.mythings.iCloudCategoriesSynced")
     // Note: .iCloudRemoteNotificationReceived is declared in CloudKitAppDelegate.swift
 }
+

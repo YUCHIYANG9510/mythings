@@ -61,16 +61,6 @@ struct SettingsView: View {
                 }
             }
 
-            #if DEBUG
-            Section("ICLOUD • DEBUG") {
-                NavigationLink {
-                    ICloudSyncDebugView()
-                } label: {
-                    Text("iCloud Debug Tools")
-                }
-            }
-            #endif
-
             Section {
                 if pm.isPro {
                     ProActiveCard {
