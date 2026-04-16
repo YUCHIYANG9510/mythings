@@ -29,7 +29,7 @@ enum SortKey: String, CaseIterable, Identifiable {
         case .none:         return "line.3.horizontal"
         case .purchaseDate: return "calendar"
         case .price:        return "dollarsign.circle"
-        case .name:         return "textformat.abc"
+        case .name:         return "a.circle"
         }
     }
 }

@@ -313,14 +313,9 @@ private extension AddItemView {
             VStack(spacing: 0) {
 
                 // ── 現有分類清單 ──
-                List {
-                    if categoryStore.categories.isEmpty {
-                        ContentUnavailableView(
-                            L("no_items"),
-                            systemImage: "square.grid.2x2",
-                            description: Text(L("or_manage_all"))
-                        )
-                    } else {
+                // ✅ 若無分類，不顯示 List（移除空狀態）
+                if !categoryStore.categories.isEmpty {
+                    List {
                         ForEach(categoryStore.categories) { c in
                             Button {
                                 categoryID = c.id
@@ -339,12 +334,11 @@ private extension AddItemView {
                         }
                         .padding(.vertical, 4)
                     }
+                    .listStyle(.insetGrouped)
                 }
-                .listStyle(.insetGrouped)
-
-                Divider()
 
                 // ── 快速新增列 ──
+                // ✅ 若無分類，此區塊會自動成為主要內容
                 QuickAddCategoryRow(
                     emoji: $newCategoryEmoji,
                     name: $newCategoryName,
@@ -361,7 +355,11 @@ private extension AddItemView {
                 )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color(.systemGroupedBackground))
+                
+                // ✅ 當沒有分類時，使用 Spacer 讓快速新增列保持在頂部
+                if categoryStore.categories.isEmpty {
+                    Spacer()
+                }
             }
             .navigationTitle(L("category"))
             .navigationBarTitleDisplayMode(.inline)
@@ -424,7 +422,7 @@ private struct QuickAddCategoryRow: View {
                 Button { showEmojiPicker = true } label: {
                     Text(emoji)
                         .font(.system(size: 22))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 50, height: 50)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color(.secondarySystemBackground))
@@ -436,7 +434,7 @@ private struct QuickAddCategoryRow: View {
                     .submitLabel(.done)
                     .onSubmit { if !name.trimmingCharacters(in: .whitespaces).isEmpty { onAdd() } }
                     .padding(.horizontal, 12)
-                    .frame(height: 44)
+                    .frame(height: 50)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color(.secondarySystemBackground))

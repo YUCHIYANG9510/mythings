@@ -61,7 +61,7 @@
 "item_name" = "物品名稱";
 "item_name_placeholder" = "輸入物品名稱...";
 "price" = "價格";
-"price_placeholder" = "$0.00";
+"price_placeholder" = "0";
 "brand" = "品牌";
 "brand_placeholder" = "輸入品牌...";
 "category" = "分類";

@@ -61,7 +61,7 @@
 "item_name" = "Item Name";
 "item_name_placeholder" = "Enter item name...";
 "price" = "Price";
-"price_placeholder" = "$0.00";
+"price_placeholder" = "0.00";
 "brand" = "Brand";
 "brand_placeholder" = "Enter brand...";
 "category" = "Category";
