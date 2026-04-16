@@ -193,3 +193,17 @@
 
 // MARK: - Brand Tags
 "add_tag" = "Add Tag";
+
+// Pro Status View
+"pro_title" = "My Things Pro";
+"done" = "Done";
+"pro_status_active" = "You are Pro";
+"pro_status_inactive" = "Not Subscribed";
+"pro_thank_you" = "Thank you for your support!";
+"pro_upgrade_message" = "Upgrade to unlock all features.";
+"pro_subscription" = "Subscription";
+"pro_lifetime" = "Lifetime Purchase";
+"pro_annual" = "Annual Subscription";
+"pro_valid_until" = "Valid Until";
+"pro_forever" = "Forever";
+"pro_manage_subscription" = "Manage Subscription";

@@ -19,11 +19,11 @@ struct ProStatusView: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("My Things Pro")
+            .navigationTitle(L("pro_title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button(L("done")) { dismiss() }
                 }
             }
         }
@@ -35,9 +35,9 @@ struct ProStatusView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 56, height: 56)
-            Text(pm.isPro ? "You are Pro" : "Not Subscribed")
+            Text(pm.isPro ? L("pro_status_active") : L("pro_status_inactive"))
                 .font(.title2).bold()
-            Text(pm.isPro ? "Thank you for your support!" : "Upgrade to unlock all features.")
+            Text(pm.isPro ? L("pro_thank_you") : L("pro_upgrade_message"))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -46,14 +46,14 @@ struct ProStatusView: View {
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Subscription")
+                Text(L("pro_subscription"))
                 Spacer()
-                Text(pm.isLifetime ? "Lifetime Purchase" : (pm.isPro ? "Annual Subscription" : "Not Subscribed"))
+                Text(subscriptionTypeText)
                     .foregroundStyle(.secondary)
             }
             Divider()
             HStack {
-                Text("Valid Until")
+                Text(L("pro_valid_until"))
                 Spacer()
                 Text(expirationText)
                     .foregroundStyle(.secondary)
@@ -70,7 +70,7 @@ struct ProStatusView: View {
             Button {
                 pm.openManageSubscriptions()
             } label: {
-                Text("Manage Subscription")
+                Text(L("pro_manage_subscription"))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -79,12 +79,22 @@ struct ProStatusView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
+    
+    private var subscriptionTypeText: String {
+        if pm.isLifetime {
+            return L("pro_lifetime")
+        } else if pm.isPro {
+            return L("pro_annual")
+        } else {
+            return L("pro_status_inactive")
+        }
+    }
 
     private var expirationText: String {
-        if pm.isLifetime { return "Forever" }
+        if pm.isLifetime { return L("pro_forever") }
         guard let date = pm.proExpirationDate else { return "-" }
         let f = DateFormatter()
-        f.locale = Locale(identifier: Locale.preferredLanguages.first ?? "en")
+        f.locale = LocalizationManager.shared.locale
         f.dateStyle = .long
         return f.string(from: date)
     }

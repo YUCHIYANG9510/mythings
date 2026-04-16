@@ -193,3 +193,17 @@
 
 // MARK: - Brand Tags
 "add_tag" = "新增標籤";
+
+// Pro Status View
+"pro_title" = "My Things Pro";
+"done" = "完成";
+"pro_status_active" = "您是 Pro 會員";
+"pro_status_inactive" = "未訂閱";
+"pro_thank_you" = "感謝您的支持！";
+"pro_upgrade_message" = "升級以解鎖所有功能。";
+"pro_subscription" = "訂閱狀態";
+"pro_lifetime" = "終身購買";
+"pro_annual" = "年度訂閱";
+"pro_valid_until" = "有效期至";
+"pro_forever" = "永久";
+"pro_manage_subscription" = "管理訂閱";

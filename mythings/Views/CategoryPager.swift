@@ -105,12 +105,13 @@ struct CategoryPager: View {
                 selectedPage = realIndex
                 selectedCategoryID = categoryPages[realIndex].id
                 
-                // 無動畫跳轉到對應的真實位置
-                withAnimation(.none) {
-                    virtualSelectedPage = realIndex + 1
-                }
-                // 使用 Task 確保在下一個 runloop 重置
+                // 使用延遲跳轉，讓滑動動畫先完成
                 Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(50))
+                    withAnimation(.none) {
+                        virtualSelectedPage = realIndex + 1
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
                     isAdjusting = false
                 }
             } else if newValue == virtualPages.count - 1 {
@@ -119,12 +120,13 @@ struct CategoryPager: View {
                 selectedPage = 0
                 selectedCategoryID = categoryPages[0].id
                 
-                // 無動畫跳轉到對應的真實位置
-                withAnimation(.none) {
-                    virtualSelectedPage = 1
-                }
-                // 使用 Task 確保在下一個 runloop 重置
+                // 使用延遲跳轉，讓滑動動畫先完成
                 Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(50))
+                    withAnimation(.none) {
+                        virtualSelectedPage = 1
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
                     isAdjusting = false
                 }
             } else {
