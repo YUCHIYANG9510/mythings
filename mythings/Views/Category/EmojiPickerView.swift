@@ -24,9 +24,9 @@ struct EmojiPickerView: View {
            VStack(spacing: 24) {
                // Header
                HStack {
-                   Button("Close") { dismiss() }
+                   Button(L("close")) { dismiss() }
                    Spacer()
-                   Text("Choose Emoji")
+                   Text(L("choose_emoji"))
                        .font(.title2.weight(.bold))
                    Spacer()
                    // 右側保留空間對齊
@@ -74,12 +74,12 @@ struct EmojiPickerView: View {
        
        var body: some View {
            VStack(alignment: .leading, spacing: 12) {
-               Text("Or enter any emoji")
+               Text(L("or_enter_emoji"))
                    .font(.subheadline)
                    .foregroundStyle(.secondary)
                
                HStack {
-                   TextField("Type emoji here", text: $inputEmoji)
+                   TextField(L("type_emoji_here"), text: $inputEmoji)
                        .font(.system(size: 16))
                        .padding(16)
                        .background(
@@ -87,7 +87,7 @@ struct EmojiPickerView: View {
                                .fill(Color(.systemGray6))  // 淺灰底色
                        )
                    
-                   Button("Use") {
+                   Button(L("use")) {
                        if !inputEmoji.isEmpty {
                            selected = inputEmoji
                            onComplete()

@@ -80,7 +80,7 @@ struct EditPhotoView: View {
                             if showProcessingText {
                                 ProgressView()
                                     .scaleEffect(1.2)
-                                Text("Removing background...")
+                                Text(L("removing_background"))
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -91,7 +91,7 @@ struct EditPhotoView: View {
                         .animation(.easeInOut(duration: 0.3), value: processingState)
                     } else if isProcessing {
                         // 傳統 loading（當沒有動畫時）
-                        ProgressView("Removing background...")
+                        ProgressView(L("removing_background"))
                             .padding(12)
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
@@ -101,9 +101,9 @@ struct EditPhotoView: View {
 
                 // 切換區
                 VStack(spacing: 12) {
-                    Picker("Background", selection: $mode) {
-                        Text("Keep background").tag(BackgroundMode.original)
-                        Text("Remove background").tag(BackgroundMode.cutout)
+                    Picker(L("background"), selection: $mode) {
+                        Text(L("keep_background")).tag(BackgroundMode.original)
+                        Text(L("remove_background")).tag(BackgroundMode.cutout)
                     }
                     .pickerStyle(.segmented)
                     .disabled(isProcessing)
@@ -117,7 +117,7 @@ struct EditPhotoView: View {
                     Button(role: .cancel) {
                         onCancel()
                     } label: {
-                        Text("Cancel")
+                        Text(L("cancel"))
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                     }
@@ -129,7 +129,7 @@ struct EditPhotoView: View {
                         let finalImage = useCut ? (cutout ?? original) : original
                         onDone(finalImage)
                     } label: {
-                        Text("Use Photo")
+                        Text(L("use_photo"))
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
                     }
@@ -140,7 +140,7 @@ struct EditPhotoView: View {
                 .padding(.bottom, 8)
             }
             .padding()
-            .navigationTitle("Edit Photo")
+            .navigationTitle(L("edit_photo"))
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: mode) { oldValue, newValue in
                 if newValue == .cutout, cutout == nil {

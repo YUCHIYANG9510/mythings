@@ -134,14 +134,14 @@ struct AddItemView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
-            .navigationTitle(existingItem == nil ? "Add item" : "Edit item")
+            .navigationTitle(existingItem == nil ? L("add_item") : L("edit_item"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundColor(.secondary)
+                    Button(L("cancel")) { dismiss() }.foregroundColor(.secondary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") { saveTapped() }.foregroundColor(.secondary)
+                    Button(L("save")) { saveTapped() }.foregroundColor(.secondary)
                 }
             }
         }
@@ -184,8 +184,10 @@ struct AddItemView: View {
 
         .onAppear(perform: configureInitialValues)
 
-        .alert("Please complete all fields", isPresented: $showValidationAlert) {
-            Button("OK", role: .cancel) {}
+        .alert(L("required_fields"), isPresented: $showValidationAlert) {
+            Button(L("ok"), role: .cancel) {}
+        } message: {
+            Text(L("please_fill_required"))
         }
 
         .sheet(isPresented: $showCategorySheet) {
@@ -204,13 +206,13 @@ struct AddItemView: View {
             }
         }
 
-        .confirmationDialog("Update Image", isPresented: $showImageSourceMenu, titleVisibility: .visible) {
-            Button("Choose from Library") { showPhotoPicker = true }
-            Button("Take Photo") { showCamera = true }
+        .confirmationDialog(L("change_image"), isPresented: $showImageSourceMenu, titleVisibility: .visible) {
+            Button(L("choose_from_library")) { showPhotoPicker = true }
+            Button(L("take_photo")) { showCamera = true }
             if selectedImage != nil {
-                Button("Remove Image", role: .destructive) { selectedImage = nil }
+                Button(L("delete"), role: .destructive) { selectedImage = nil }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(L("cancel"), role: .cancel) {}
         }
     }
 }
@@ -225,7 +227,7 @@ private extension AddItemView {
         Button { showCategorySheet = true } label: {
             HStack(spacing: 8) {
                 Text(selectedCategoryEmoji)
-                Text(categoryID == nil ? "Select Category" : selectedCategoryName)
+                Text(categoryID == nil ? L("select_category") : selectedCategoryName)
                     .font(.headline)
                     .foregroundColor(.primary)
                 Image(systemName: "chevron.right")
@@ -247,7 +249,7 @@ private extension AddItemView {
         } else {
             VStack(spacing: 10) {
                 Image(systemName: "photo").font(.system(size: 40))
-                Text("Tap to add image").font(.subheadline).foregroundColor(.gray)
+                Text(L("select_image")).font(.subheadline).foregroundColor(.gray)
             }
             .frame(maxWidth: .infinity).frame(height: 220)
             .background(Color.secondary.opacity(0.08))
@@ -256,17 +258,19 @@ private extension AddItemView {
         }
     }
 
-    var titleField: some View { LabeledTextField(title: "Title", placeholder: "", text: $name) }
+    var titleField: some View { 
+        LabeledTextField(title: L("item_name"), placeholder: L("item_name_placeholder"), text: $name) 
+    }
 
     var priceField: some View {
-        LabeledTextField(title: "Price", placeholder: "", text: $price, keyboard: .decimalPad, prefix: "$")
+        LabeledTextField(title: L("price"), placeholder: L("price_placeholder"), text: $price, keyboard: .decimalPad, prefix: "$")
     }
 
     @ViewBuilder var brandSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Brand").font(.footnote).foregroundColor(.secondary)
+            Text(L("brand")).font(.footnote).foregroundColor(.secondary)
             VStack(spacing: 16) {
-                TextField("Brand Name", text: $brand)
+                TextField(L("brand_placeholder"), text: $brand)
                     .textInputAutocapitalization(.words)
                     .padding(.horizontal, 14).frame(height: 48)
                     .background(fieldBG).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -279,13 +283,13 @@ private extension AddItemView {
     var dateSection: some View {
         VStack(spacing: 12) {
             HStack {
-                Label("Date", systemImage: "calendar").labelStyle(.titleAndIcon)
+                Label(L("purchase_date"), systemImage: "calendar").labelStyle(.titleAndIcon)
                 Spacer()
                 Toggle("", isOn: $useDate).labelsHidden()
             }
             .padding().background(fieldBG).clipShape(RoundedRectangle(cornerRadius: 14))
             if useDate {
-                DatePicker("Select Date", selection: $selectedDate, displayedComponents: [.date])
+                DatePicker(L("purchase_date"), selection: $selectedDate, displayedComponents: [.date])
                     .datePickerStyle(.graphical).tint(.appPrimary).padding(.top, -8)
             }
         }
@@ -293,7 +297,7 @@ private extension AddItemView {
 
     var saveButton: some View {
         Button { saveTapped() } label: {
-            Text("Save").font(.headline)
+            Text(L("save")).font(.headline)
                 .frame(maxWidth: .infinity).frame(height: 56)
                 .background(Color(UIColor.label))
                 .foregroundColor(Color(UIColor.systemBackground))
@@ -312,9 +316,9 @@ private extension AddItemView {
                 List {
                     if categoryStore.categories.isEmpty {
                         ContentUnavailableView(
-                            "No categories",
+                            L("no_items"),
                             systemImage: "square.grid.2x2",
-                            description: Text("Add one below.")
+                            description: Text(L("or_manage_all"))
                         )
                     } else {
                         ForEach(categoryStore.categories) { c in
@@ -359,11 +363,11 @@ private extension AddItemView {
                 .padding(.vertical, 12)
                 .background(Color(.systemGroupedBackground))
             }
-            .navigationTitle("Category")
+            .navigationTitle(L("category"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showCategorySheet = false }
+                    Button(L("done")) { showCategorySheet = false }
                 }
             }
         }
@@ -398,7 +402,7 @@ private struct QuickAddCategoryRow: View {
                     HStack(spacing: 6) {
                         Image(systemName: "lock.fill")
                             .font(.subheadline)
-                        Text("Upgrade to add new category")
+                        Text(L("upgrade") + " " + L("add_category"))
                             .font(.subheadline)
                     }
                     .foregroundStyle(.secondary)
@@ -428,7 +432,7 @@ private struct QuickAddCategoryRow: View {
                 }
                 .buttonStyle(.plain)
 
-                TextField("New category name", text: $name)
+                TextField(L("category_name_placeholder"), text: $name)
                     .submitLabel(.done)
                     .onSubmit { if !name.trimmingCharacters(in: .whitespaces).isEmpty { onAdd() } }
                     .padding(.horizontal, 12)
@@ -603,7 +607,7 @@ private struct BrandChipsView: View {
                 )
             }
             Button(action: addTag) {
-                HStack(spacing: 8) { Image(systemName: "plus"); Text("Add Tag") }
+                HStack(spacing: 8) { Image(systemName: "plus"); Text(L("add_tag")) }
                     .font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(addColor)

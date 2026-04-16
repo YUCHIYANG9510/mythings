@@ -21,6 +21,9 @@ struct SettingsView: View {
     @State private var navToICloud = false
     @State private var showPaywall = false
     @State private var showProStatus = false
+    
+    // 語言管理（選用功能）
+    @StateObject private var localizationManager = LocalizationManager.shared
 
     private var isSyncing: Bool {
         if case .syncing = iCloudSync.syncStatus { return true }
@@ -29,17 +32,24 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("CATEGORIES") {
-                NavigationLink("Manage Categories") {
+            Section(L("categories_section")) {
+                NavigationLink(L("manage_categories")) {
                     ManageCategoriesView(categoryStore: categoryStore)
                 }
             }
 
-            Section("APPEARANCE") {
-                Toggle("Dark Mode", isOn: $isDarkMode)
+            Section(L("appearance_section")) {
+                Toggle(L("dark_mode"), isOn: $isDarkMode)
+                
+                // 語言選擇（選用功能）
+                Picker(L("language"), selection: $localizationManager.currentLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
             }
 
-            Section("ICLOUD") {
+            Section(L("icloud_section")) {
                 Button {
                     if pm.canUseICloud {
                         navToICloud = true
@@ -48,10 +58,10 @@ struct SettingsView: View {
                     }
                 } label: {
                     HStack {
-                        Text("iCloud Sync")
+                        Text(L("icloud_sync"))
                         if !pm.canUseICloud {
                             Spacer()
-                            Text("Pro")
+                            Text(L("pro"))
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -78,20 +88,20 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Delete All Things") {
+                Button(L("delete_all_things")) {
                     showingDeleteAllAlert = true
                 }
                 .foregroundColor(.red)
                 .disabled(isDeletingAll || items.isEmpty)
             } footer: {
                 if items.count > 0 {
-                    Text("This will permanently delete all \(items.count) items and their images. This action cannot be undone.")
+                    Text(String(format: L("this_will_delete_footer"), items.count))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle(L("settings_title"))
         .navigationDestination(isPresented: $navToICloud) {
             ICloudSyncSettingsView()
         }
@@ -101,11 +111,11 @@ struct SettingsView: View {
         .sheet(isPresented: $showProStatus) {
             ProStatusView().environmentObject(pm)
         }
-        .alert("Delete All Things", isPresented: $showingDeleteAllAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete All", role: .destructive) { deleteAllItems() }
+        .alert(L("delete_all_alert_title"), isPresented: $showingDeleteAllAlert) {
+            Button(L("cancel"), role: .cancel) { }
+            Button(L("delete_all_alert_button"), role: .destructive) { deleteAllItems() }
         } message: {
-            Text("Are you sure you want to delete all \(items.count) items? This action cannot be undone and will also remove all images.")
+            Text(String(format: L("delete_all_alert_message"), items.count))
         }
         .listStyle(.insetGrouped)
     }
@@ -172,10 +182,10 @@ private struct JoinProCard: View {
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Join Pro")
+                    Text(L("join_pro"))
                         .font(.title3).fontWeight(.semibold)
                         .foregroundStyle(.white)
-                    Text("Subscription or one-time purchase")
+                    Text(L("subscription_or_one_time"))
                         .foregroundStyle(.white.opacity(0.9))
                         .font(.caption)
                 }
@@ -183,7 +193,7 @@ private struct JoinProCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title3)
-                    Text("Upgrade")
+                    Text(L("upgrade"))
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
@@ -227,16 +237,16 @@ private struct ProActiveCard: View {
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("You're Pro")
+                    Text(L("you_are_pro"))
                         .font(.title3).fontWeight(.semibold)
                         .foregroundStyle(.white)
-                    Text("Thank you for your support!")
+                    Text(L("thank_you_support"))
                         .foregroundStyle(.white.opacity(0.9))
                         .font(.caption)
                 }
 
                 HStack(spacing: 6) {
-                    Text("Check")
+                    Text(L("check"))
                         .font(.headline)
                         .fontWeight(.semibold)
                 }
@@ -322,3 +332,4 @@ private func makeSettingsPreview() -> some View {
 #Preview {
     makeSettingsPreview()
 }
+

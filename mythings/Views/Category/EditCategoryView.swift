@@ -26,9 +26,9 @@ struct EditCategoryView: View {
 
             // Header
             HStack {
-                Button("Close") { dismiss() }
+                Button(L("close")) { dismiss() }
                 Spacer()
-                Text("Edit Category")
+                Text(L("edit_category_title"))
                     .font(.title2.weight(.bold))
                 Spacer()
                 // 右側保留空間對齊
@@ -55,11 +55,11 @@ struct EditCategoryView: View {
 
             // 名稱輸入
             VStack(alignment: .leading, spacing: 8) {
-                Text("Name")
+                Text(L("category_name_label"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                TextField("Name", text: $categoryName)
+                TextField(L("category_name_field"), text: $categoryName)
                     .textInputAutocapitalization(.words)
                     .padding(14)
                     .background(
@@ -76,10 +76,10 @@ struct EditCategoryView: View {
                 let trimmed = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
                 
                 if trimmed.isEmpty {
-                    alertMessage = "Please enter a category name"
+                    alertMessage = L("please_enter_category_name")
                     showAlert = true
                 } else if categoryStore.isDuplicateName(trimmed, excludingID: category.id) {
-                    alertMessage = "A category with this name already exists"
+                    alertMessage = L("category_already_exists")
                     showAlert = true
                 } else {
                     let updatedCategory = Category(
@@ -91,7 +91,7 @@ struct EditCategoryView: View {
                     dismiss()
                 }
             } label: {
-                Text("Save")
+                Text(L("save"))
                     .font(.title3.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -104,7 +104,7 @@ struct EditCategoryView: View {
             Button {
                 showDeleteAlert = true
             } label: {
-                Text("Delete")
+                Text(L("delete"))
                     .foregroundColor(.red)
             }
             .padding(.bottom, 8)
@@ -122,22 +122,22 @@ struct EditCategoryView: View {
                 .presentationCornerRadius(40)
 
         }
-        .alert("Error", isPresented: $showAlert) {
-            Button("OK", role: .cancel) { }
+        .alert(L("error"), isPresented: $showAlert) {
+            Button(L("ok"), role: .cancel) { }
         } message: {
             Text(alertMessage)
         }
-        .alert("Delete Category?", isPresented: $showDeleteAlert) {
-            Button("Cancel", role: .cancel) { }
+        .alert(L("delete_category_title"), isPresented: $showDeleteAlert) {
+            Button(L("cancel"), role: .cancel) { }
             
-            Button("Delete", role: .destructive) {
+            Button(L("delete"), role: .destructive) {
                 if let index = categoryStore.categories.firstIndex(where: { $0.id == category.id }) {
                     categoryStore.deleteCategory(at: IndexSet(integer: index))
                 }
                 dismiss()
             }
         } message: {
-            Text("This action cannot be undone.")
+            Text(L("delete_category_message"))
         }
     }
 }

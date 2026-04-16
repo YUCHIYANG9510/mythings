@@ -1,7 +1,195 @@
-/* 
-  Localizable.strings
+/*
+  Localizable.strings (Simplified Chinese) - COMPLETE
   mythings
-
-  Created by DAISY YANG on 2026/4/15.
-  
 */
+
+// MARK: - Settings View
+"settings_title" = "设置";
+"categories_section" = "分类";
+"manage_categories" = "管理分类";
+"appearance_section" = "外观";
+"dark_mode" = "深色模式";
+"language" = "语言";
+"icloud_section" = "iCloud";
+"icloud_sync" = "iCloud 同步";
+"pro" = "专业版";
+"delete_all_things" = "删除所有物品";
+"this_will_delete_footer" = "这将会永久删除 %d 个物品";
+"delete_all_alert_title" = "删除所有物品？";
+"cancel" = "取消";
+"delete_all_alert_button" = "全部删除";
+"delete_all_alert_message" = "确定要删除全部 %d 个物品吗？此操作无法撤销。";
+
+// Pro Cards
+"join_pro" = "加入专业版";
+"subscription_or_one_time" = "订阅制或一次性购买";
+"upgrade" = "升级";
+"you_are_pro" = "你是专业版用户！";
+"thank_you_support" = "感谢你的支持";
+"check" = "查看";
+
+// MARK: - Manage Categories View
+"manage_categories_title" = "管理分类";
+"new_category" = "新建分类";
+"delete_all_categories" = "删除所有分类";
+"delete_category_title" = "删除分类？";
+"delete_category_message" = "此操作无法撤销。";
+"delete" = "删除";
+"reset_categories_title" = "重置分类？";
+"reset_categories_message_icloud" = "清除本地所有分类，同时清除 iCloud 并重新同步。";
+"reset_categories_message_local" = "清除本地所有分类。";
+"reset" = "重置";
+
+// MARK: - Content View / Header
+"all_categories" = "全部";
+"search_placeholder" = "搜索物品...";
+"grid_view" = "网格";
+"list_view" = "列表";
+"sort_by" = "排序";
+"sort_none" = "默认（最新）";
+"sort_name" = "名称";
+"sort_brand" = "品牌";
+"sort_price" = "价格";
+"sort_date" = "日期";
+"sort_ascending" = "升序";
+"sort_descending" = "降序";
+
+// MARK: - Add/Edit Item View
+"add_item" = "添加物品";
+"edit_item" = "编辑物品";
+"save" = "保存";
+"item_name" = "物品名称";
+"item_name_placeholder" = "输入物品名称...";
+"price" = "价格";
+"price_placeholder" = "$0.00";
+"brand" = "品牌";
+"brand_placeholder" = "输入品牌...";
+"category" = "分类";
+"select_category" = "选择分类";
+"purchase_date" = "购买日期";
+"enable_date" = "启用购买日期";
+"select_image" = "选择图片";
+"take_photo" = "拍照";
+"choose_from_library" = "从相册选择";
+"change_image" = "更换图片";
+"required_fields" = "必填字段";
+"please_fill_required" = "请填写物品名称并选择分类。";
+
+// Add Category Sheet (in AddItemView)
+"quick_add_category" = "快速添加分类";
+"category_name" = "分类名称";
+"category_name_placeholder" = "例如：电子产品";
+"category_emoji" = "表情符号";
+"add_category" = "添加分类";
+"or_manage_all" = "或管理所有分类";
+
+// MARK: - Item Detail View
+"delete_item_title" = "删除物品？";
+"delete_item_message" = "确定要删除此物品吗？此操作无法撤销。";
+"edit" = "编辑";
+"share" = "分享";
+"purchased_on" = "购买于";
+"created_on" = "创建于";
+
+// MARK: - Paywall View
+"premium_title" = "My Things 专业版";
+"premium_subtitle" = "解锁 My Things 专业版\n发挥完整潜力。";
+"feature_unlimited_objects" = "无限物品";
+"feature_unlimited_objects_desc" = "创建任意数量的物品，无需担心存储空间限制";
+"feature_unlimited_categories" = "无限分类";
+"feature_unlimited_categories_desc" = "将物品整理到无限分类中，完美分类，轻松访问";
+"feature_icloud_sync" = "iCloud 同步与备份";
+"feature_icloud_sync_desc" = "通过无缝的 iCloud 集成，在所有设备上安全保存并访问你的数据";
+"plan_annual" = "年度订阅";
+"plan_annual_subtitle" = "每年计费";
+"plan_lifetime" = "终身买断";
+"plan_lifetime_subtitle" = "永久拥有";
+"subscribe_annually" = "订阅年度方案";
+"buy_lifetime" = "购买终身方案";
+"privacy_policy" = "隐私政策";
+"terms" = "使用条款";
+"restore_purchases" = "恢复购买";
+
+// MARK: - iCloud Sync Settings
+"icloud_settings_title" = "iCloud 同步";
+"sync_status" = "同步状态";
+"sync_idle" = "空闲";
+"sync_syncing" = "同步中...";
+"sync_success" = "已同步";
+"sync_error" = "错误";
+"enable_sync" = "启用 iCloud 同步";
+"last_sync" = "上次同步";
+"never" = "从未";
+"sync_now" = "立即同步";
+
+// MARK: - Pro Status View
+"pro_status_title" = "专业版状态";
+"subscription_status" = "订阅状态";
+"active" = "启用中";
+"expires_on" = "到期日";
+"manage_subscription" = "管理订阅";
+
+// MARK: - Empty States
+"no_items" = "暂无物品";
+"no_items_message" = "点击 + 添加你的第一个物品";
+"no_search_results" = "无搜索结果";
+"no_search_results_message" = "试试其他搜索关键字";
+
+// MARK: - Error Messages
+"error" = "错误";
+"error_loading_image" = "加载图片失敗";
+"error_saving_item" = "保存物品失败";
+"error_deleting_item" = "删除物品失败";
+"error_sync" = "同步发生错误";
+
+// MARK: - Common
+"done" = "完成";
+"close" = "关闭";
+"ok" = "确定";
+"yes" = "是";
+"no" = "否";
+"continue" = "继续";
+"back" = "返回";
+"next" = "下一步";
+"name" = "名称";
+
+// MARK: - Add/Edit Category View
+"add_category_title" = "添加分类";
+"edit_category_title" = "编辑分类";
+"category_name_label" = "名称";
+"category_name_field" = "名称";
+"please_enter_category_name" = "请输入分类名称";
+"category_already_exists" = "此分类名称已存在";
+"new_category_default" = "新分类";
+
+// MARK: - Header View (Search & Sort)
+"search_by_name_or_brand" = "搜索名称或品牌";
+"sort" = "排序";
+"sort_label_default" = "默认排序";
+"sort_label_newest_first" = "最新优先";
+"sort_label_oldest_first" = "最旧优先";
+"sort_label_lowest_price" = "价格最低";
+"sort_label_highest_price" = "价格最高";
+"sort_label_a_to_z" = "A → Z";
+"sort_label_z_to_a" = "Z → A";
+"sort_key_default" = "默认";
+"sort_key_purchase_date" = "购买日期";
+"sort_key_price" = "价格";
+"sort_key_name" = "名称";
+
+// MARK: - Emoji Picker View
+"choose_emoji" = "选择表情符号";
+"or_enter_emoji" = "或输入任意表情符号";
+"type_emoji_here" = "在此输入表情符号";
+"use" = "使用";
+
+// MARK: - Edit Photo View
+"edit_photo" = "编辑照片";
+"background" = "背景";
+"keep_background" = "保留背景";
+"remove_background" = "移除背景";
+"removing_background" = "正在移除背景...";
+"use_photo" = "使用照片";
+
+// MARK: - Brand Tags
+"add_tag" = "添加标签";

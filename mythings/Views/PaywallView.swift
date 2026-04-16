@@ -13,8 +13,8 @@ struct PaywallView: View {
     enum Plan: String, CaseIterable, Identifiable {
         case annual, lifetime
         var id: String { rawValue }
-        var title: String { self == .annual ? "Annual" : "Lifetime" }
-        var subtitle: String { self == .annual ? "Billed annually" : "Yours forever" }
+        var title: String { self == .annual ? L("plan_annual") : L("plan_lifetime") }
+        var subtitle: String { self == .annual ? L("plan_annual_subtitle") : L("plan_lifetime_subtitle") }
     }
 
     // 從環境取得購買管理與關閉方法
@@ -52,9 +52,9 @@ struct PaywallView: View {
                 Image("pro app icon")
                     .resizable().scaledToFit().frame(width: 80, height: 80)
             }
-            Text("My Things Premium")
+            Text(L("premium_title"))
                 .font(.system(size: 28, weight: .bold))
-            Text("Unlock your full potential with\nMy Things Premium.")
+            Text(L("premium_subtitle"))
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -65,20 +65,20 @@ struct PaywallView: View {
     private var featuresCard: some View {
         VStack(spacing: 0) {
             featureRow(image: Image("icon_cube"),
-                       title: "Unlimited Objects",
-                       desc: "Create as many objects as you need and never worry about hitting storage limits")
+                       title: L("feature_unlimited_objects"),
+                       desc: L("feature_unlimited_objects_desc"))
 
             Divider().padding(.horizontal, 24)
 
             featureRow(image: Image("icon_categories"),
-                       title: "Unlimited Categories",
-                       desc: "Organize your items into endless categories for perfect classification and easy access")
+                       title: L("feature_unlimited_categories"),
+                       desc: L("feature_unlimited_categories_desc"))
 
             Divider().padding(.horizontal, 24)
 
             featureRow(image: Image("icon_icloud"),
-                       title: "iCloud Sync & Backup",
-                       desc: "Keep your data safe and accessible across all your devices with seamless iCloud integration")
+                       title: L("feature_icloud_sync"),
+                       desc: L("feature_icloud_sync_desc"))
         }
         .padding(.vertical, 20)
         .background(RoundedRectangle(cornerRadius: 20).fill(Color(.systemBackground)))
@@ -108,7 +108,7 @@ struct PaywallView: View {
                     if ok { dismiss() }
                 }
             } label: {
-                Text(selected == .annual ? "Subscribe annually" : "Buy lifetime")
+                Text(selected == .annual ? L("subscribe_annually") : L("buy_lifetime"))
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -120,11 +120,11 @@ struct PaywallView: View {
             .padding(.horizontal, 20)
 
             HStack(spacing: 18) {
-                Link("Privacy Policy", destination: URL(string: "https://www.notion.so/Privacy-Policy-2783fc7b7fd7807d89cffca2bb3d12a0?source=copy_link")!)
+                Link(L("privacy_policy"), destination: URL(string: "https://www.notion.so/Privacy-Policy-2783fc7b7fd7807d89cffca2bb3d12a0?source=copy_link")!)
                 Circle().frame(width: 3, height: 3).foregroundStyle(.tertiary)
-                Link("Terms", destination: URL(string: "https://www.notion.so/Terms-of-Use-2783fc7b7fd7807786b0f552e7a58654?source=copy_link")!)
+                Link(L("terms"), destination: URL(string: "https://www.notion.so/Terms-of-Use-2783fc7b7fd7807786b0f552e7a58654?source=copy_link")!)
                 Circle().frame(width: 3, height: 3).foregroundStyle(.tertiary)
-                Button("Restore purchases") {
+                Button(L("restore_purchases")) {
                     Task { await pm.restore(); if pm.isPro { dismiss() } }
                 }
                 .disabled(pm.isBusy)

@@ -13,8 +13,13 @@ class LocalizationManager: ObservableObject {
     @Published var currentLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(currentLanguage.rawValue, forKey: "app_language")
+            // 重新載入語言包
+            loadLanguageBundle()
         }
     }
+    
+    // 當前語言的 Bundle
+    private(set) var languageBundle: Bundle?
     
     private init() {
         // 嘗試從 UserDefaults 讀取使用者選擇的語言
@@ -25,6 +30,25 @@ class LocalizationManager: ObservableObject {
             // 自動偵測系統語言
             self.currentLanguage = Self.detectSystemLanguage()
         }
+        loadLanguageBundle()
+    }
+    
+    /// 載入當前語言的 Bundle
+    private func loadLanguageBundle() {
+        if let path = Bundle.main.path(forResource: currentLanguage.rawValue, ofType: "lproj"),
+           let bundle = Bundle(path: path) {
+            self.languageBundle = bundle
+        } else {
+            self.languageBundle = Bundle.main
+        }
+    }
+    
+    /// 取得本地化字串
+    func localizedString(_ key: String, comment: String = "") -> String {
+        if let bundle = languageBundle {
+            return NSLocalizedString(key, tableName: nil, bundle: bundle, comment: comment)
+        }
+        return NSLocalizedString(key, comment: comment)
     }
     
     /// 自動偵測系統語言
@@ -92,6 +116,11 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+/// 全域本地化函數 - 取代 NSLocalizedString
+func L(_ key: String, comment: String = "") -> String {
+    return LocalizationManager.shared.localizedString(key, comment: comment)
+}
+
 /// String Extension - 用於手動語言切換時的本地化
 extension String {
     func localized(language: AppLanguage) -> String {
@@ -100,5 +129,10 @@ extension String {
             return NSLocalizedString(self, comment: "")
         }
         return NSLocalizedString(self, tableName: nil, bundle: bundle, comment: "")
+    }
+    
+    /// 使用當前選擇的語言本地化
+    var localized: String {
+        return LocalizationManager.shared.localizedString(self)
     }
 }

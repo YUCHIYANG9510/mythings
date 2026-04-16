@@ -1,7 +1,195 @@
-/* 
-  Localizable.strings
+/*
+  Localizable.strings (English) - COMPLETE
   mythings
-
-  Created by DAISY YANG on 2026/4/15.
-  
 */
+
+// MARK: - Settings View
+"settings_title" = "Settings";
+"categories_section" = "Categories";
+"manage_categories" = "Manage Categories";
+"appearance_section" = "Appearance";
+"dark_mode" = "Dark Mode";
+"language" = "Language";
+"icloud_section" = "iCloud";
+"icloud_sync" = "iCloud Sync";
+"pro" = "Pro";
+"delete_all_things" = "Delete All Items";
+"this_will_delete_footer" = "This will permanently delete %d items";
+"delete_all_alert_title" = "Delete All Items?";
+"cancel" = "Cancel";
+"delete_all_alert_button" = "Delete All";
+"delete_all_alert_message" = "Are you sure you want to delete all %d items? This action cannot be undone.";
+
+// Pro Cards
+"join_pro" = "Join Pro";
+"subscription_or_one_time" = "Subscription or one-time purchase";
+"upgrade" = "Upgrade";
+"you_are_pro" = "You are Pro!";
+"thank_you_support" = "Thank you for your support";
+"check" = "Check";
+
+// MARK: - Manage Categories View
+"manage_categories_title" = "Manage Categories";
+"new_category" = "New Category";
+"delete_all_categories" = "Delete All Categories";
+"delete_category_title" = "Delete Category?";
+"delete_category_message" = "This action cannot be undone.";
+"delete" = "Delete";
+"reset_categories_title" = "Reset Categories?";
+"reset_categories_message_icloud" = "Clear all categories locally. Also clears iCloud and resyncs.";
+"reset_categories_message_local" = "Clear all categories locally.";
+"reset" = "Reset";
+
+// MARK: - Content View / Header
+"all_categories" = "All";
+"search_placeholder" = "Search items...";
+"grid_view" = "Grid";
+"list_view" = "List";
+"sort_by" = "Sort";
+"sort_none" = "Default (Newest)";
+"sort_name" = "Name";
+"sort_brand" = "Brand";
+"sort_price" = "Price";
+"sort_date" = "Date";
+"sort_ascending" = "Ascending";
+"sort_descending" = "Descending";
+
+// MARK: - Add/Edit Item View
+"add_item" = "Add Item";
+"edit_item" = "Edit Item";
+"save" = "Save";
+"item_name" = "Item Name";
+"item_name_placeholder" = "Enter item name...";
+"price" = "Price";
+"price_placeholder" = "$0.00";
+"brand" = "Brand";
+"brand_placeholder" = "Enter brand...";
+"category" = "Category";
+"select_category" = "Select Category";
+"purchase_date" = "Purchase Date";
+"enable_date" = "Enable Purchase Date";
+"select_image" = "Select Image";
+"take_photo" = "Take Photo";
+"choose_from_library" = "Choose from Library";
+"change_image" = "Change Image";
+"required_fields" = "Required Fields";
+"please_fill_required" = "Please fill in the item name and select a category.";
+
+// Add Category Sheet (in AddItemView)
+"quick_add_category" = "Quick Add Category";
+"category_name" = "Category Name";
+"category_name_placeholder" = "e.g., Electronics";
+"category_emoji" = "Emoji";
+"add_category" = "Add Category";
+"or_manage_all" = "or manage all categories";
+
+// MARK: - Item Detail View
+"delete_item_title" = "Delete Item?";
+"delete_item_message" = "Are you sure you want to delete this item? This action cannot be undone.";
+"edit" = "Edit";
+"share" = "Share";
+"purchased_on" = "Purchased on";
+"created_on" = "Created on";
+
+// MARK: - Paywall View
+"premium_title" = "My Things Premium";
+"premium_subtitle" = "Unlock your full potential with\nMy Things Premium.";
+"feature_unlimited_objects" = "Unlimited Objects";
+"feature_unlimited_objects_desc" = "Create as many objects as you need and never worry about hitting storage limits";
+"feature_unlimited_categories" = "Unlimited Categories";
+"feature_unlimited_categories_desc" = "Organize your items into endless categories for perfect classification and easy access";
+"feature_icloud_sync" = "iCloud Sync & Backup";
+"feature_icloud_sync_desc" = "Keep your data safe and accessible across all your devices with seamless iCloud integration";
+"plan_annual" = "Annual";
+"plan_annual_subtitle" = "Billed annually";
+"plan_lifetime" = "Lifetime";
+"plan_lifetime_subtitle" = "Yours forever";
+"subscribe_annually" = "Subscribe annually";
+"buy_lifetime" = "Buy lifetime";
+"privacy_policy" = "Privacy Policy";
+"terms" = "Terms";
+"restore_purchases" = "Restore purchases";
+
+// MARK: - iCloud Sync Settings
+"icloud_settings_title" = "iCloud Sync";
+"sync_status" = "Sync Status";
+"sync_idle" = "Idle";
+"sync_syncing" = "Syncing...";
+"sync_success" = "Synced";
+"sync_error" = "Error";
+"enable_sync" = "Enable iCloud Sync";
+"last_sync" = "Last Sync";
+"never" = "Never";
+"sync_now" = "Sync Now";
+
+// MARK: - Pro Status View
+"pro_status_title" = "Pro Status";
+"subscription_status" = "Subscription Status";
+"active" = "Active";
+"expires_on" = "Expires on";
+"manage_subscription" = "Manage Subscription";
+
+// MARK: - Empty States
+"no_items" = "No items yet";
+"no_items_message" = "Tap + to add your first item";
+"no_search_results" = "No results";
+"no_search_results_message" = "Try a different search term";
+
+// MARK: - Error Messages
+"error" = "Error";
+"error_loading_image" = "Failed to load image";
+"error_saving_item" = "Failed to save item";
+"error_deleting_item" = "Failed to delete item";
+"error_sync" = "Sync error occurred";
+
+// MARK: - Common
+"done" = "Done";
+"close" = "Close";
+"ok" = "OK";
+"yes" = "Yes";
+"no" = "No";
+"continue" = "Continue";
+"back" = "Back";
+"next" = "Next";
+"name" = "Name";
+
+// MARK: - Add/Edit Category View
+"add_category_title" = "Add Category";
+"edit_category_title" = "Edit Category";
+"category_name_label" = "Name";
+"category_name_field" = "Name";
+"please_enter_category_name" = "Please enter a category name";
+"category_already_exists" = "A category with this name already exists";
+"new_category_default" = "New Category";
+
+// MARK: - Header View (Search & Sort)
+"search_by_name_or_brand" = "Search by name or brand";
+"sort" = "Sort";
+"sort_label_default" = "Default Order";
+"sort_label_newest_first" = "Newest First";
+"sort_label_oldest_first" = "Oldest First";
+"sort_label_lowest_price" = "Lowest Price";
+"sort_label_highest_price" = "Highest Price";
+"sort_label_a_to_z" = "A → Z";
+"sort_label_z_to_a" = "Z → A";
+"sort_key_default" = "Default";
+"sort_key_purchase_date" = "Purchase Date";
+"sort_key_price" = "Price";
+"sort_key_name" = "Name";
+
+// MARK: - Emoji Picker View
+"choose_emoji" = "Choose Emoji";
+"or_enter_emoji" = "Or enter any emoji";
+"type_emoji_here" = "Type emoji here";
+"use" = "Use";
+
+// MARK: - Edit Photo View
+"edit_photo" = "Edit Photo";
+"background" = "Background";
+"keep_background" = "Keep background";
+"remove_background" = "Remove background";
+"removing_background" = "Removing background...";
+"use_photo" = "Use Photo";
+
+// MARK: - Brand Tags
+"add_tag" = "Add Tag";

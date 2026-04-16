@@ -11,20 +11,20 @@ struct AddCategoryView: View {
     @ObservedObject var categoryStore: CategoryStore
     @Environment(\.dismiss) var dismiss
 
-    @State private var categoryName = "New Category"
+    @State private var categoryName = ""
     @State private var emoji = "🎧"                 // ⭐️ 預設 emoji
     @State private var showEmojiPicker = false
     @State private var showAlert = false
     @State private var alertMessage = ""
-
+    
     var body: some View {
         VStack(spacing: 24) {
 
             // Header
             HStack {
-                Button("Close") { dismiss() }
+                Button(L("close")) { dismiss() }
                 Spacer()
-                Text("Add Category")
+                Text(L("add_category_title"))
                     .font(.title2.weight(.bold))
                 Spacer()
                 // 右側保留空間對齊
@@ -51,11 +51,11 @@ struct AddCategoryView: View {
 
             // 名稱輸入
             VStack(alignment: .leading, spacing: 8) {
-                Text("Name")
+                Text(L("category_name_label"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                TextField("Name", text: $categoryName)
+                TextField(L("category_name_field"), text: $categoryName)
                     .textInputAutocapitalization(.words)
                     .padding(14)
                     .background(
@@ -72,17 +72,17 @@ struct AddCategoryView: View {
                 let trimmed = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
                 
                 if trimmed.isEmpty {
-                    alertMessage = "Please enter a category name"
+                    alertMessage = L("please_enter_category_name")
                     showAlert = true
                 } else if categoryStore.isDuplicateName(trimmed) {
-                    alertMessage = "A category with this name already exists"
+                    alertMessage = L("category_already_exists")
                     showAlert = true
                 } else {
                     categoryStore.addCategory(name: trimmed, emoji: emoji)
                     dismiss()
                 }
             } label: {
-                Text("Save")
+                Text(L("save"))
                     .font(.title3.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -96,14 +96,20 @@ struct AddCategoryView: View {
             // Text("Delete").foregroundColor(.secondary)
 
         }
+        .onAppear {
+            // 設定預設名稱
+            if categoryName.isEmpty {
+                categoryName = L("new_category_default")
+            }
+        }
         .presentationDragIndicator(.hidden)
         .sheet(isPresented: $showEmojiPicker) {
             EmojiPickerView(selected: $emoji)
                 .presentationDetents([.fraction(0.7)])
                 .presentationCornerRadius(40)
         }
-        .alert("Error", isPresented: $showAlert) {
-            Button("OK", role: .cancel) { }
+        .alert(L("error"), isPresented: $showAlert) {
+            Button(L("ok"), role: .cancel) { }
         } message: {
             Text(alertMessage)
         }

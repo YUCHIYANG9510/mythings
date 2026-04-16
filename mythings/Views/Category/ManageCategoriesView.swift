@@ -33,8 +33,8 @@ struct ManageCategoriesView: View {
     private var showProBadgeOnNew: Bool { !pm.isPro && categoryStore.categories.count >= 6 }
     private var resetAlertMessage: String {
         iCloudSync.isEnabled
-        ? "Clear all categories locally. Also clears iCloud and resyncs."
-        : "Clear all categories locally."
+        ? L("reset_categories_message_icloud")
+        : L("reset_categories_message_local")
     }
 
     var body: some View {
@@ -76,7 +76,7 @@ struct ManageCategoriesView: View {
 
             Spacer(minLength: 0)
         }
-        .navigationTitle("Manage Categories")
+        .navigationTitle(L("manage_categories_title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
@@ -100,17 +100,17 @@ struct ManageCategoriesView: View {
         }
 
         // 單筆刪除確認
-        .alert("Delete Category?", isPresented: $showDeleteAlert) {
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-            Button("Delete", role: .destructive) { confirmDeleteSelected() }
+        .alert(L("delete_category_title"), isPresented: $showDeleteAlert) {
+            Button(L("cancel"), role: .cancel) { pendingDelete = nil }
+            Button(L("delete"), role: .destructive) { confirmDeleteSelected() }
         } message: {
-            Text("This action cannot be undone.")
+            Text(L("delete_category_message"))
         }
 
         // 全刪確認
-        .alert("Reset Categories?", isPresented: $showResetAllAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) { resetAllCategories() }
+        .alert(L("reset_categories_title"), isPresented: $showResetAllAlert) {
+            Button(L("cancel"), role: .cancel) { }
+            Button(L("reset"), role: .destructive) { resetAllCategories() }
         } message: {
             Text(resetAlertMessage)
         }
@@ -178,12 +178,12 @@ private struct NewCategoryButton: View {
             HStack(spacing: 12) {
                 Image(systemName: "plus.circle.fill")
                     .imageScale(.large)
-                Text("New Category")
+                Text(L("new_category"))
                     .font(.title3.weight(.semibold))
 
                 if showProBadge {
                     Spacer()
-                    Text("Pro")
+                    Text(L("pro"))
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -204,7 +204,7 @@ private struct DeleteAllCategoriesButton: View {
             HStack(spacing: 12) {
                 Image(systemName: "trash.fill")
                     .imageScale(.large)
-                Text("Delete All Categories")
+                Text(L("delete_all_categories"))
                     .font(.title3.weight(.semibold))
                 Spacer()
             }

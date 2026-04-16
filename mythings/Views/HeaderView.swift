@@ -17,10 +17,10 @@ enum SortKey: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .none:         return "Default"
-        case .purchaseDate: return "Purchase Date"
-        case .price:        return "Price"
-        case .name:         return "Name"
+        case .none:         return L("sort_key_default")
+        case .purchaseDate: return L("sort_key_purchase_date")
+        case .price:        return L("sort_key_price")
+        case .name:         return L("sort_key_name")
         }
     }
 
@@ -45,13 +45,13 @@ enum SortOrder: String {
 /// 實際顯示的選單文字
 func sortLabel(for key: SortKey, order: SortOrder) -> String {
     switch (key, order) {
-    case (.none, _):                   return "Default Order"
-    case (.purchaseDate, .descending): return "Newest First"
-    case (.purchaseDate, .ascending):  return "Oldest First"
-    case (.price, .ascending):         return "Lowest Price"
-    case (.price, .descending):        return "Highest Price"
-    case (.name, .ascending):          return "A → Z"
-    case (.name, .descending):         return "Z → A"
+    case (.none, _):                   return L("sort_label_default")
+    case (.purchaseDate, .descending): return L("sort_label_newest_first")
+    case (.purchaseDate, .ascending):  return L("sort_label_oldest_first")
+    case (.price, .ascending):         return L("sort_label_lowest_price")
+    case (.price, .descending):        return L("sort_label_highest_price")
+    case (.name, .ascending):          return L("sort_label_a_to_z")
+    case (.name, .descending):         return L("sort_label_z_to_a")
     }
 }
 
@@ -69,7 +69,7 @@ struct HeaderView: View {
                 HStack {
                     HStack {
                         Image(systemName: "magnifyingglass")
-                        TextField("Search by name or brand", text: $text)
+                        TextField(L("search_by_name_or_brand"), text: $text)
                             .textFieldStyle(PlainTextFieldStyle())
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
@@ -83,7 +83,7 @@ struct HeaderView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
 
-                    Button("Cancel") {
+                    Button(L("cancel")) {
                         withAnimation { isSearching = false; text = "" }
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     }
@@ -109,7 +109,7 @@ struct HeaderView: View {
                 // 🔽 Sort menu
                 Menu {
                     // 依據
-                    Picker("Sort by", selection: $sortKey) {
+                    Picker(L("sort_by"), selection: $sortKey) {
                         ForEach(SortKey.allCases) { key in
                             Label(key.title, systemImage: key.icon).tag(key)
                         }
@@ -129,7 +129,7 @@ struct HeaderView: View {
                         .font(.title2)
                         .foregroundColor(.primary)
                         .padding(.trailing, 8)
-                        .accessibilityLabel("Sort")
+                        .accessibilityLabel(L("sort"))
                 }
 
                 Button(action: { withAnimation { isSearching = true } }) {
