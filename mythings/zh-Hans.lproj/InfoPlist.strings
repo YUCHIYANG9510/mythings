@@ -5,3 +5,12 @@
   Created by DAISY YANG on 2026/4/17.
   
 */
+
+/* 照片库访问 */
+"NSPhotoLibraryUsageDescription" = "我们需要访问您的照片库以选择项目照片。";
+
+/* 相机访问 */
+"NSCameraUsageDescription" = "我们需要访问您的相机以拍摄项目照片。";
+
+/* 照片库添加 */
+"NSPhotoLibraryAddUsageDescription" = "我们需要权限以将处理后的照片保存至您的照片库。";
