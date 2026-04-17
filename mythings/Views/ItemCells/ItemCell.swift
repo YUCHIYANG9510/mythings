@@ -61,8 +61,8 @@ struct ItemCell: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture { selectedItem = item }
         .contextMenu {
-            Button("Edit") { editingItem = item }
-            Button("Delete", role: .destructive) {
+            Button(L("edit")) { editingItem = item }
+            Button(L("delete"), role: .destructive) {
                 deleteItem()
             }
         }

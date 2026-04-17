@@ -134,6 +134,7 @@
 "no_items_message" = "点击 + 添加你的第一个物品";
 "no_search_results" = "无搜索结果";
 "no_search_results_message" = "试试其他搜索关键字";
+"empty_state_message" = "请添加物品";
 
 // MARK: - Error Messages
 "error" = "错误";
@@ -207,3 +208,21 @@
 "pro_valid_until" = "有效期至";
 "pro_forever" = "永久";
 "pro_manage_subscription" = "管理订阅";
+
+// iCloud 同步设置
+"icloud_sync_title" = "iCloud 同步";
+"enable_icloud_sync" = "启用 iCloud 同步";
+"sync_status" = "同步状态";
+"last_sync_time" = "最后同步时间";
+"sync_disabled" = "同步已停用";
+"syncing" = "同步中…";
+"sync_successful" = "同步成功";
+"not_synced_yet" = "尚未同步";
+"idle" = "闲置";
+"error_occurred" = "发生错误";
+"icloud_sync_alert_title" = "iCloud 同步";
+"ok" = "确定";
+
+"icloud_sync_enabled_footer" = "iCloud 网络可能不稳定。如果 iCloud 同步失败，请耐心等待，或在 iOS 系统设置中检查您的 Apple ID 设置里的 iCloud 服务状态。必要时您也可以重新启动 App。";
+
+"icloud_sync_disabled_footer" = "iCloud 同步已停用。您的数据只会存储在本地，不会在设备间同步。协作空间功能也将无法使用。请启用同步并重新启动 App 以恢复完整功能。";

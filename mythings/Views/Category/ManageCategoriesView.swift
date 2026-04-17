@@ -47,10 +47,16 @@ struct ManageCategoriesView: View {
                         CategoryRow(category: category)
                             .contentShape(Rectangle())
                             .onTapGesture { editingCategory = category }
-                    }
-                    .onDelete { indexSet in
-                        pendingDelete = indexSet
-                        showDeleteAlert = true
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    if let index = categoryStore.categories.firstIndex(where: { $0.id == category.id }) {
+                                        pendingDelete = IndexSet(integer: index)
+                                        showDeleteAlert = true
+                                    }
+                                } label: {
+                                    Label(L("delete"), systemImage: "trash")
+                                }
+                            }
                     }
                     .onMove(perform: moveCategories)
                 }
@@ -79,7 +85,19 @@ struct ManageCategoriesView: View {
         .navigationTitle(L("manage_categories_title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { EditButton() }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    withAnimation {
+                        if editMode?.wrappedValue.isEditing == true {
+                            editMode?.wrappedValue = .inactive
+                        } else {
+                            editMode?.wrappedValue = .active
+                        }
+                    }
+                } label: {
+                    Text(isEditing ? L("done") : L("edit"))
+                }
+            }
         }
 
         // Add / Edit

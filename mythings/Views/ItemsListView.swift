@@ -33,7 +33,7 @@ struct ItemsListView: View {
                             Button(role: .destructive) {
                                 deleteItem(item)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(L("delete"), systemImage: "trash")
                             }
                         }
                     }

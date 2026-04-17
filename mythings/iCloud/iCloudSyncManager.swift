@@ -50,15 +50,15 @@ enum SyncError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .iCloudUnavailable:
-            return "iCloud 服務不可用，請檢查設定"
+            return L("sync_error_icloud_unavailable")
         case .networkError(let error):
-            return "網路連接問題：\(error.localizedDescription)"
+            return String(format: L("sync_error_network"), error.localizedDescription)
         case .dataCorrupted(let message):
-            return "資料錯誤：\(message)"
+            return String(format: L("sync_error_data_corrupted"), message)
         case .quotaExceeded:
-            return "iCloud 儲存空間不足"
+            return L("sync_error_quota_exceeded")
         case .authenticationFailed:
-            return "iCloud 帳號驗證失敗"
+            return L("sync_error_authentication_failed")
         }
     }
 }
@@ -94,7 +94,7 @@ actor SyncCoordinator {
         } catch is CancellationError {
             await runners.setStatus(.idle)
         } catch {
-            await runners.setStatus(.error("Sync failed: \(error.localizedDescription)"))
+            await runners.setStatus(.error(String(format: L("sync_error_failed"), error.localizedDescription)))
         }
         isSyncing = false
         if !pending.isEmpty { await maybeRun(runners: runners) }
@@ -381,7 +381,7 @@ final class iCloudSyncManager: ObservableObject {
             case .notAuthenticated: return SyncError.authenticationFailed.localizedDescription
             case .networkUnavailable, .networkFailure: return SyncError.networkError(underlying: error).localizedDescription
             case .quotaExceeded: return SyncError.quotaExceeded.localizedDescription
-            case .serviceUnavailable, .requestRateLimited: return "iCloud 服務暫時不可用，請稍後再試"
+            case .serviceUnavailable, .requestRateLimited: return L("sync_error_service_unavailable")
             default: return ckError.localizedDescription
             }
         }

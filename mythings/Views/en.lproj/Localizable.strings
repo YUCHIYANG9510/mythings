@@ -20,7 +20,7 @@
 "delete_all_alert_button" = "Delete All";
 "delete_all_alert_message" = "Are you sure you want to delete all %d items? This action cannot be undone.";
 
-// Pro Cards
+// MARK: - Pro Cards
 "join_pro" = "Join Pro";
 "subscription_or_one_time" = "Subscription or one-time purchase";
 "upgrade" = "Upgrade";
@@ -75,7 +75,7 @@
 "required_fields" = "Required Fields";
 "please_fill_required" = "Please fill in the item name and select a category.";
 
-// Add Category Sheet (in AddItemView)
+// MARK: - Add Category Sheet (in AddItemView)
 "quick_add_category" = "Quick Add Category";
 "category_name" = "Category Name";
 "category_name_placeholder" = "e.g., Electronics";
@@ -134,6 +134,7 @@
 "no_items_message" = "Tap + to add your first item";
 "no_search_results" = "No results";
 "no_search_results_message" = "Try a different search term";
+"empty_state_message" = "Add items to get started";
 
 // MARK: - Error Messages
 "error" = "Error";
@@ -194,7 +195,7 @@
 // MARK: - Brand Tags
 "add_tag" = "Add Tag";
 
-// Pro Status View
+// MARK: - Pro Status View
 "pro_title" = "My Things Pro";
 "done" = "Done";
 "pro_status_active" = "You are Pro";
@@ -207,3 +208,30 @@
 "pro_valid_until" = "Valid Until";
 "pro_forever" = "Forever";
 "pro_manage_subscription" = "Manage Subscription";
+
+// MARK: - iCloud Sync Settings
+"icloud_sync_title" = "iCloud Sync";
+"enable_icloud_sync" = "Enable iCloud Sync";
+"sync_status" = "Sync Status";
+"last_sync_time" = "Last Sync Time";
+"sync_disabled" = "Sync Disabled";
+"syncing" = "Syncing…";
+"sync_successful" = "Sync Successful";
+"not_synced_yet" = "Not Synced Yet";
+"idle" = "Idle";
+"error_occurred" = "Error Occurred";
+"icloud_sync_alert_title" = "iCloud Sync";
+"ok" = "OK";
+
+"icloud_sync_enabled_footer" = "iCloud network can be unstable. If iCloud sync fails, please be patient, or check the iCloud service status in your Apple ID settings in iOS System Settings. You may also restart the app if necessary.";
+
+"icloud_sync_disabled_footer" = "iCloud sync is disabled. Your data will only be stored locally and will not sync between devices. Collaboration space features will also be unavailable. Enable sync and restart the app to restore full functionality.";
+
+// MARK: - iCloud Sync Error Messages
+"sync_error_failed" = "Sync failed: %@";
+"sync_error_icloud_unavailable" = "iCloud service is unavailable. Please check your settings";
+"sync_error_network" = "Network connection issue: %@";
+"sync_error_data_corrupted" = "Data error: %@";
+"sync_error_quota_exceeded" = "iCloud storage quota exceeded";
+"sync_error_authentication_failed" = "iCloud authentication failed";
+"sync_error_service_unavailable" = "iCloud service is temporarily unavailable. Please try again later";

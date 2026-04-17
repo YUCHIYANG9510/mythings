@@ -22,13 +22,13 @@ struct ICloudSyncSettingsView: View {
 
     // MARK: - Derived UI Text
     private var syncStatusText: String {
-        guard iCloudSync.isEnabled else { return "Sync Disabled" }
+        guard iCloudSync.isEnabled else { return L("sync_disabled") }
         switch iCloudSync.syncStatus {
-        case .syncing: return "Syncing…"
-        case .success: return "Sync Successful"
+        case .syncing: return L("syncing")
+        case .success: return L("sync_successful")
         case .idle:
-            return (iCloudSync.lastSyncDate == nil) ? "Not Synced Yet" : "Idle"
-        case .error: return "Error Occurred"
+            return (iCloudSync.lastSyncDate == nil) ? L("not_synced_yet") : L("idle")
+        case .error: return L("error_occurred")
         }
     }
 
@@ -43,10 +43,10 @@ struct ICloudSyncSettingsView: View {
     private var footerText: String {
         if iCloudSync.isEnabled {
             // Footer text when sync is enabled
-            return "iCloud network can be unstable. If iCloud sync fails, please be patient, or check the iCloud service status in your Apple ID settings in iOS System Settings. You may also restart the app if necessary."
+            return L("icloud_sync_enabled_footer")
         } else {
             // Footer text when sync is disabled
-            return "iCloud sync is disabled. Your data will only be stored locally and will not sync between devices. Collaboration space features will also be unavailable. Enable sync and restart the app to restore full functionality."
+            return L("icloud_sync_disabled_footer")
         }
     }
 
@@ -54,7 +54,7 @@ struct ICloudSyncSettingsView: View {
         Form {
             // MARK: - Toggle Switch
             Section {
-                Toggle("Enable iCloud Sync", isOn: $iCloudSync.isEnabled)
+                Toggle(L("enable_icloud_sync"), isOn: $iCloudSync.isEnabled)
                     .tint(.green)
             }
 
@@ -63,7 +63,7 @@ struct ICloudSyncSettingsView: View {
                 Section {
                     // Sync Status
                     HStack {
-                        Text("Sync Status")
+                        Text(L("sync_status"))
                         Spacer()
                         Text(syncStatusText)
                             .foregroundStyle(.secondary)
@@ -71,7 +71,7 @@ struct ICloudSyncSettingsView: View {
 
                     // Last Sync Time
                     HStack {
-                        Text("Last Sync Time")
+                        Text(L("last_sync_time"))
                         Spacer()
                         Text(lastSyncText)
                             .foregroundStyle(.secondary)
@@ -82,9 +82,9 @@ struct ICloudSyncSettingsView: View {
                 // When sync is disabled, only show status
                 Section {
                     HStack {
-                        Text("Sync Status")
+                        Text(L("sync_status"))
                         Spacer()
-                        Text("Sync Disabled")
+                        Text(L("sync_disabled"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -98,7 +98,7 @@ struct ICloudSyncSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .navigationTitle("iCloud Sync")
+        .navigationTitle(L("icloud_sync_title"))
         .onAppear {
                     iCloudSync.kickoffIfNeeded()
                 }
@@ -111,8 +111,8 @@ struct ICloudSyncSettingsView: View {
                 showingCloudAlert = true
             }
         }
-        .alert("iCloud Sync", isPresented: $showingCloudAlert) {
-            Button("OK", role: .cancel) { }
+        .alert(L("icloud_sync_alert_title"), isPresented: $showingCloudAlert) {
+            Button(L("ok"), role: .cancel) { }
         } message: {
             Text(cloudAlertMessage)
         }

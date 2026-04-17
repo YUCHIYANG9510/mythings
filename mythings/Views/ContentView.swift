@@ -86,6 +86,9 @@ struct ContentView: View {
 
     @EnvironmentObject private var pm: PurchasesManager
     @State private var showPaywall = false
+    
+    // 語言管理器 - 用於監聽語言變化
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @AppStorage("pref.removeBG") private var prefRemoveBG: Bool = true
     @AppStorage("sort.key")   private var storedSortKey: String   = SortKey.none.rawValue
@@ -99,7 +102,7 @@ struct ContentView: View {
     // ✅ category 頁面清單：用 (id: UUID?, name: String) tuple
     // id == nil 代表 "All"
     private var categoryPages: [(id: UUID?, name: String)] {
-        var pages: [(id: UUID?, name: String)] = [(nil, "All")]
+        var pages: [(id: UUID?, name: String)] = [(nil, L("all_categories"))]
         pages += categoryStore.categories.map { (Optional($0.id), $0.name) }
         return pages
     }
@@ -129,7 +132,7 @@ struct ContentView: View {
         if let id = selectedCategoryID {
             name = categoryStore.name(for: id)
         } else {
-            name = "All"
+            name = L("all_categories")
         }
         let count = itemsCountFor(categoryID: selectedCategoryID)
         return "\(name) (\(count))"
@@ -427,6 +430,19 @@ struct ContentView: View {
                 }
             }
         }
+        // ✅ 監聽語言變化：當語言切換時，categoryPages 會重新計算
+        // 確保 selectedPage 仍然指向正確的分類
+        .onChange(of: localizationManager.currentLanguage) { _, _ in
+            // 當語言變化時，如果當前選中的是 "All"（nil），確保 selectedPage 為 0
+            if selectedCategoryID == nil {
+                selectedPage = 0
+            } else if let id = selectedCategoryID {
+                // 如果選中的是某個分類，找到它的新 index
+                if let newIndex = categoryPages.firstIndex(where: { $0.id == id }) {
+                    selectedPage = newIndex
+                }
+            }
+        }
     }
 
     // MARK: - Persistence
@@ -618,7 +634,7 @@ struct EmptyStateView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 120, height: 120)
-            Text("It's empty here...").foregroundColor(.gray).font(.subheadline)
+            Text(L("empty_state_message")).foregroundColor(.gray).font(.subheadline)
         }
         .padding(.top, 180)
     }

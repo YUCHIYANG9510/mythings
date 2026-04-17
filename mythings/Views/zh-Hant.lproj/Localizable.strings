@@ -194,7 +194,7 @@
 // MARK: - Brand Tags
 "add_tag" = "新增標籤";
 
-// Pro Status View
+// MARK: - Pro Status View
 "pro_title" = "My Things Pro";
 "done" = "完成";
 "pro_status_active" = "您是 Pro 會員";
@@ -207,3 +207,37 @@
 "pro_valid_until" = "有效期至";
 "pro_forever" = "永久";
 "pro_manage_subscription" = "管理訂閱";
+
+// MARK: - Empty States
+"no_items" = "目前沒有物品";
+"no_items_message" = "點擊 + 新增你的第一個物品";
+"no_search_results" = "找不到搜尋結果";
+"no_search_results_message" = "試試其他搜尋關鍵字";
+"empty_state_message" = "請新增物品";
+
+// MARK: - iCloud 同步設定
+"icloud_sync_title" = "iCloud 同步";
+"enable_icloud_sync" = "啟用 iCloud 同步";
+"sync_status" = "同步狀態";
+"last_sync_time" = "最後同步時間";
+"sync_disabled" = "同步已停用";
+"syncing" = "同步中…";
+"sync_successful" = "同步成功";
+"not_synced_yet" = "尚未同步";
+"idle" = "閒置";
+"error_occurred" = "發生錯誤";
+"icloud_sync_alert_title" = "iCloud 同步";
+"ok" = "確定";
+
+"icloud_sync_enabled_footer" = "iCloud 網路可能不穩定。如果 iCloud 同步失敗，請耐心等待，或在 iOS 系統設定中檢查您的 Apple ID 設定裡的 iCloud 服務狀態。必要時您也可以重新啟動 App。";
+
+"icloud_sync_disabled_footer" = "iCloud 同步已停用。您的資料只會儲存在本機，不會在裝置間同步。協作空間功能也將無法使用。請啟用同步並重新啟動 App 以恢復完整功能。";
+
+// MARK: - iCloud 同步錯誤訊息
+"sync_error_failed" = "同步失敗：%@";
+"sync_error_icloud_unavailable" = "iCloud 服務不可用，請檢查設定";
+"sync_error_network" = "網路連接問題：%@";
+"sync_error_data_corrupted" = "資料錯誤：%@";
+"sync_error_quota_exceeded" = "iCloud 儲存空間不足";
+"sync_error_authentication_failed" = "iCloud 帳號驗證失敗";
+"sync_error_service_unavailable" = "iCloud 服務暫時不可用，請稍後再試";
