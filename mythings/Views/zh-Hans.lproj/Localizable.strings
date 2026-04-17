@@ -20,7 +20,7 @@
 "delete_all_alert_button" = "全部删除";
 "delete_all_alert_message" = "确定要删除全部 %d 个物品吗？此操作无法撤销。";
 
-// Pro Cards
+// MARK: - Pro Cards
 "join_pro" = "加入专业版";
 "subscription_or_one_time" = "订阅制或一次性购买";
 "upgrade" = "升级";
@@ -75,7 +75,7 @@
 "required_fields" = "必填字段";
 "please_fill_required" = "请填写物品名称并选择分类。";
 
-// Add Category Sheet (in AddItemView)
+// MARK: - Add Category Sheet (in AddItemView)
 "quick_add_category" = "快速添加分类";
 "category_name" = "分类名称";
 "category_name_placeholder" = "例如：电子产品";
@@ -93,13 +93,13 @@
 
 // MARK: - Paywall View
 "premium_title" = "My Things 专业版";
-"premium_subtitle" = "解锁 My Things 专业版\n发挥完整潜力。";
+"premium_subtitle" = "解锁 My Things 专业版\n发挥完整潜力";
 "feature_unlimited_objects" = "无限物品";
 "feature_unlimited_objects_desc" = "创建任意数量的物品，无需担心存储空间限制";
 "feature_unlimited_categories" = "无限分类";
-"feature_unlimited_categories_desc" = "将物品整理到无限分类中，完美分类，轻松访问";
+"feature_unlimited_categories_desc" = "创建不限数量的分类，让物品分类更清晰、管理更高效";
 "feature_icloud_sync" = "iCloud 同步与备份";
-"feature_icloud_sync_desc" = "通过无缝的 iCloud 集成，在所有设备上安全保存并访问你的数据";
+"feature_icloud_sync_desc" = "通过 iCloud 无缝同步，让数据在所有设备间安全保存并随时访问";
 "plan_annual" = "年度订阅";
 "plan_annual_subtitle" = "每年计费";
 "plan_lifetime" = "终身买断";
@@ -195,9 +195,8 @@
 // MARK: - Brand Tags
 "add_tag" = "添加标签";
 
-// Pro Status View
-"pro_title" = "My Things Pro";
-"done" = "完成";
+// MARK: - Pro Status View
+"pro_title" = "My Things 专业版";
 "pro_status_active" = "您是 Pro 会员";
 "pro_status_inactive" = "未订阅";
 "pro_thank_you" = "感谢您的支持！";
@@ -209,10 +208,9 @@
 "pro_forever" = "永久";
 "pro_manage_subscription" = "管理订阅";
 
-// iCloud 同步设置
+// MARK: - Additional iCloud Sync Settings
 "icloud_sync_title" = "iCloud 同步";
 "enable_icloud_sync" = "启用 iCloud 同步";
-"sync_status" = "同步状态";
 "last_sync_time" = "最后同步时间";
 "sync_disabled" = "同步已停用";
 "syncing" = "同步中…";
@@ -221,8 +219,16 @@
 "idle" = "闲置";
 "error_occurred" = "发生错误";
 "icloud_sync_alert_title" = "iCloud 同步";
-"ok" = "确定";
 
 "icloud_sync_enabled_footer" = "iCloud 网络可能不稳定。如果 iCloud 同步失败，请耐心等待，或在 iOS 系统设置中检查您的 Apple ID 设置里的 iCloud 服务状态。必要时您也可以重新启动 App。";
 
 "icloud_sync_disabled_footer" = "iCloud 同步已停用。您的数据只会存储在本地，不会在设备间同步。协作空间功能也将无法使用。请启用同步并重新启动 App 以恢复完整功能。";
+
+// MARK: - iCloud Sync Error Messages
+"sync_error_failed" = "同步失败：%@";
+"sync_error_icloud_unavailable" = "iCloud 服务不可用，请检查您的设置";
+"sync_error_network" = "网络连接问题：%@";
+"sync_error_data_corrupted" = "数据错误：%@";
+"sync_error_quota_exceeded" = "iCloud 存储配额已超出";
+"sync_error_authentication_failed" = "iCloud 身份验证失败";
+"sync_error_service_unavailable" = "iCloud 服务暂时不可用，请稍后再试";

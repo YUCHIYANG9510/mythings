@@ -18,9 +18,9 @@
 "delete_all_alert_title" = "刪除所有物品？";
 "cancel" = "取消";
 "delete_all_alert_button" = "全部刪除";
-"delete_all_alert_message" = "確定要刪除全部 %d 個物品嗎？此操作無法撤銷。";
+"delete_all_alert_message" = "確定要刪除全部 %d 個物品嗎？此操作無法復原。";
 
-// Pro Cards
+// MARK: - Pro Cards
 "join_pro" = "加入專業版";
 "subscription_or_one_time" = "訂閱制或一次性購買";
 "upgrade" = "升級";
@@ -33,7 +33,7 @@
 "new_category" = "新增分類";
 "delete_all_categories" = "刪除所有分類";
 "delete_category_title" = "刪除分類？";
-"delete_category_message" = "此操作無法撤銷。";
+"delete_category_message" = "此操作無法復原。";
 "delete" = "刪除";
 "reset_categories_title" = "重設分類？";
 "reset_categories_message_icloud" = "清除本地所有分類，同時清除 iCloud 並重新同步。";
@@ -75,7 +75,7 @@
 "required_fields" = "必填欄位";
 "please_fill_required" = "請填寫物品名稱並選擇分類。";
 
-// Add Category Sheet (in AddItemView)
+// MARK: - Add Category Sheet (in AddItemView)
 "quick_add_category" = "快速新增分類";
 "category_name" = "分類名稱";
 "category_name_placeholder" = "例如：電子產品";
@@ -85,7 +85,7 @@
 
 // MARK: - Item Detail View
 "delete_item_title" = "刪除物品？";
-"delete_item_message" = "確定要刪除此物品嗎？此操作無法撤銷。";
+"delete_item_message" = "確定要刪除此物品嗎？此操作無法復原。";
 "edit" = "編輯";
 "share" = "分享";
 "purchased_on" = "購買於";
@@ -93,13 +93,13 @@
 
 // MARK: - Paywall View
 "premium_title" = "My Things 專業版";
-"premium_subtitle" = "解鎖 My Things 專業版\n發揮完整潛力。";
+"premium_subtitle" = "解鎖 My Things 專業版\n發揮完整潛力";
 "feature_unlimited_objects" = "無限物品";
 "feature_unlimited_objects_desc" = "建立任意數量的物品，無需擔心儲存空間限制";
 "feature_unlimited_categories" = "無限分類";
-"feature_unlimited_categories_desc" = "將物品整理到無限分類中，完美分類，輕鬆存取";
+"feature_unlimited_categories_desc" = "可建立不限數量的分類，讓物品整理更清楚、更好查找";
 "feature_icloud_sync" = "iCloud 同步與備份";
-"feature_icloud_sync_desc" = "透過無縫的 iCloud 整合，在所有裝置上安全保存並存取你的資料";
+"feature_icloud_sync_desc" = "透過 iCloud 無縫同步，讓資料在所有裝置間安全保存並隨時存取";
 "plan_annual" = "年度訂閱";
 "plan_annual_subtitle" = "每年計費";
 "plan_lifetime" = "終身買斷";
@@ -134,6 +134,7 @@
 "no_items_message" = "點擊 + 新增你的第一個物品";
 "no_search_results" = "無搜尋結果";
 "no_search_results_message" = "試試其他搜尋關鍵字";
+"empty_state_message" = "請新增物品";
 
 // MARK: - Error Messages
 "error" = "錯誤";
@@ -195,8 +196,7 @@
 "add_tag" = "新增標籤";
 
 // MARK: - Pro Status View
-"pro_title" = "My Things Pro";
-"done" = "完成";
+"pro_title" = "My Things 專業版";
 "pro_status_active" = "您是 Pro 會員";
 "pro_status_inactive" = "未訂閱";
 "pro_thank_you" = "感謝您的支持！";
@@ -208,17 +208,9 @@
 "pro_forever" = "永久";
 "pro_manage_subscription" = "管理訂閱";
 
-// MARK: - Empty States
-"no_items" = "目前沒有物品";
-"no_items_message" = "點擊 + 新增你的第一個物品";
-"no_search_results" = "找不到搜尋結果";
-"no_search_results_message" = "試試其他搜尋關鍵字";
-"empty_state_message" = "請新增物品";
-
 // MARK: - iCloud 同步設定
 "icloud_sync_title" = "iCloud 同步";
 "enable_icloud_sync" = "啟用 iCloud 同步";
-"sync_status" = "同步狀態";
 "last_sync_time" = "最後同步時間";
 "sync_disabled" = "同步已停用";
 "syncing" = "同步中…";
@@ -227,7 +219,6 @@
 "idle" = "閒置";
 "error_occurred" = "發生錯誤";
 "icloud_sync_alert_title" = "iCloud 同步";
-"ok" = "確定";
 
 "icloud_sync_enabled_footer" = "iCloud 網路可能不穩定。如果 iCloud 同步失敗，請耐心等待，或在 iOS 系統設定中檢查您的 Apple ID 設定裡的 iCloud 服務狀態。必要時您也可以重新啟動 App。";
 
