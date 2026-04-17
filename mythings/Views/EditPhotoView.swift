@@ -29,6 +29,9 @@ struct EditPhotoView: View {
     let onDone: (UIImage) -> Void
     /// 取消編輯時回呼（外層負責 dismiss 與清理）
     let onCancel: () -> Void
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @State private var mode: BackgroundMode
     @State private var cutout: UIImage?

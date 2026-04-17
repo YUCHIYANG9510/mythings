@@ -46,6 +46,9 @@ struct AddItemView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var pm: PurchasesManager
     var onComplete: (Item) -> Void
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @State private var name: String = ""
     @State private var brand: String = ""
@@ -290,7 +293,10 @@ private extension AddItemView {
             .padding().background(fieldBG).clipShape(RoundedRectangle(cornerRadius: 14))
             if useDate {
                 DatePicker(L("purchase_date"), selection: $selectedDate, displayedComponents: [.date])
-                    .datePickerStyle(.graphical).tint(.appPrimary).padding(.top, -8)
+                    .datePickerStyle(.graphical)
+                    .tint(.appPrimary)
+                    .environment(\.locale, localizationManager.locale)
+                    .padding(.top, -8)
             }
         }
     }

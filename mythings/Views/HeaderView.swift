@@ -62,6 +62,9 @@ struct HeaderView: View {
     @Binding var sortKey: SortKey
     @Binding var sortOrder: SortOrder
     var navigateToSettings: () -> Void
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     var body: some View {
         HStack {

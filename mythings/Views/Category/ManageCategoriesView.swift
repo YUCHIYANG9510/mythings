@@ -15,6 +15,9 @@ struct ManageCategoriesView: View {
     // 🔑 RevenueCat：用於分類數量 gating（免費上限 6）
     @EnvironmentObject private var pm: PurchasesManager
     @State private var showPaywall = false
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @Environment(\.editMode) private var editMode
     @State private var showAddCategoryView = false

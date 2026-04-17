@@ -10,6 +10,9 @@ import SwiftUI
 struct AddCategoryView: View {
     @ObservedObject var categoryStore: CategoryStore
     @Environment(\.dismiss) var dismiss
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @State private var categoryName = ""
     @State private var emoji = "🎧"                 // ⭐️ 預設 emoji

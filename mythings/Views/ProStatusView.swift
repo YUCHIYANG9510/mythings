@@ -8,6 +8,9 @@ import SwiftUI
 struct ProStatusView: View {
     @EnvironmentObject var pm: PurchasesManager
     @Environment(\.dismiss) private var dismiss
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     var body: some View {
         NavigationStack {

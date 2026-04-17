@@ -25,6 +25,9 @@ struct ItemDetailView: View {
 
     @State private var showEdit = false
     @State private var editImage: UIImage?
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     init(item: Item,
          categoryStore: CategoryStore,
@@ -53,7 +56,7 @@ struct ItemDetailView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar")
                             .foregroundColor(.secondary)
-                        Text(Self.isoFormatter.string(from: d))
+                        Text(dateFormatter.string(from: d))
                             .font(.callout)
                             .monospacedDigit()
                             .foregroundColor(.primary)
@@ -125,7 +128,7 @@ struct ItemDetailView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar")
                             .foregroundColor(.secondary)
-                        Text(Self.isoFormatter.string(from: d))
+                        Text(dateFormatter.string(from: d))
                             .font(.callout)
                             .monospacedDigit()
                             .foregroundColor(.primary)
@@ -230,10 +233,10 @@ struct ItemDetailView: View {
         onEdited?(updated)
     }
 
-    private static let isoFormatter: DateFormatter = {
+    private var dateFormatter: DateFormatter {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.locale = localizationManager.locale
         f.dateFormat = "yyyy-MM-dd"
         return f
-    }()
+    }
 }

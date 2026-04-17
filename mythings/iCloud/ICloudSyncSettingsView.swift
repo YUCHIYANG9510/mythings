@@ -7,18 +7,21 @@ import SwiftUI
 
 struct ICloudSyncSettingsView: View {
     @EnvironmentObject var iCloudSync: iCloudSyncManager
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     @State private var showingCloudAlert = false
     @State private var cloudAlertMessage = ""
 
     // MARK: - Formatters
-    private let lastSyncFormatter: DateFormatter = {
+    private var lastSyncFormatter: DateFormatter {
         let df = DateFormatter()
         df.calendar = Calendar(identifier: .gregorian)
-        df.locale = Locale(identifier: "en_US")
+        df.locale = localizationManager.locale
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return df
-    }()
+    }
 
     // MARK: - Derived UI Text
     private var syncStatusText: String {

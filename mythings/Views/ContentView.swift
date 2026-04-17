@@ -628,6 +628,8 @@ struct ListItemImageView: View {
 }
 
 struct EmptyStateView: View {
+    @ObservedObject private var localizationManager = LocalizationManager.shared
+    
     var body: some View {
         VStack {
             Image("emptyState")

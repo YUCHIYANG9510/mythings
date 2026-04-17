@@ -10,6 +10,9 @@ import SwiftUI
 struct EmojiPickerView: View {
     @Environment(\.dismiss) var dismiss
     @Binding var selected: String
+    
+    // 🌐 監聽語言變更
+    @ObservedObject private var localizationManager = LocalizationManager.shared
 
     // 常用集，之後你可換成更大的表或從遠端載入
     private let emojis: [String] = [
