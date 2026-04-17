@@ -1,0 +1,13 @@
+/* 
+  InfoPlist.strings
+  English Localization for Privacy Descriptions
+*/
+
+/* Photo Library Access */
+"NSPhotoLibraryUsageDescription" = "We need access to your photo library to select item photos.";
+
+/* Camera Access */
+"NSCameraUsageDescription" = "We need access to your camera to take photos of items.";
+
+/* Photo Library Additions */
+"NSPhotoLibraryAddUsageDescription" = "We need permission to save processed photos to your photo library.";
